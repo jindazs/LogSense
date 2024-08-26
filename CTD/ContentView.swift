@@ -1,22 +1,31 @@
 import SwiftUI
 import WebKit
 
+class WebViewModel: ObservableObject {
+    @Published var webView: CustomWebView?
+    
+    func goBack() {
+        webView?.goBack()
+    }
+}
+
 struct ContentView: View {
     @State private var projectName: String = UserDefaults.standard.string(forKey: "ProjectName") ?? ""
     @State private var showSettings: Bool = false
+    @StateObject private var webViewModel = WebViewModel()
     
     var body: some View {
         ZStack {
             TabView {
-                WebViewWrapper(url: URL(string: "https://scrapbox.io/\(projectName)")!)
+                WebViewWrapper(url: URL(string: "https://scrapbox.io/\(projectName)")!, webViewModel: webViewModel)
                     .tabItem {
                         Text("メイン")
                     }
-                WebViewWrapper(url: URL(string: "https://scrapbox.io/\(projectName)/ToDo")!)
+                WebViewWrapper(url: URL(string: "https://scrapbox.io/\(projectName)/ToDo")!, webViewModel: webViewModel)
                     .tabItem {
                         Text("ToDo")
                     }
-                WebViewWrapper(url: URL(string: "https://scrapbox.io/\(projectName)/\(getCurrentDate())")!)
+                WebViewWrapper(url: URL(string: "https://scrapbox.io/\(projectName)/\(getCurrentDate())")!, webViewModel: webViewModel)
                     .tabItem {
                         Text("日付")
                     }
@@ -28,7 +37,7 @@ struct ContentView: View {
                 
                 HStack {
                     Button(action: {
-                        // 戻るボタンのアクション
+                        webViewModel.goBack()
                     }) {
                         Image(systemName: "arrow.backward")
                             .resizable()
@@ -103,19 +112,28 @@ class CustomWebView: WKWebView {
 
 struct WebViewWrapper: UIViewRepresentable {
     let url: URL
+    @ObservedObject var webViewModel: WebViewModel
     
-    func makeUIView(context: Context) -> WKWebView {
+    func makeUIView(context: Context) -> CustomWebView {
         let webView = CustomWebView()
         
         // カスタムユーザーエージェントを設定
         webView.customUserAgent = "Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.0 Mobile/15E148 Safari/604.1"
         
+        webViewModel.webView = webView
+        
+        let request = URLRequest(url: url)
+        webView.load(request)
+        
         return webView
     }
     
-    func updateUIView(_ webView: WKWebView, context: Context) {
-        let request = URLRequest(url: url)
-        webView.load(request)
+    func updateUIView(_ webView: CustomWebView, context: Context) {
+        // URLが更新された場合に再度ロード
+        if webView.url != url {
+            let request = URLRequest(url: url)
+            webView.load(request)
+        }
     }
 }
 
