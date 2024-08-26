@@ -12,23 +12,30 @@ class WebViewModel: ObservableObject {
 struct ContentView: View {
     @State private var projectName: String = UserDefaults.standard.string(forKey: "ProjectName") ?? ""
     @State private var showSettings: Bool = false
+    @State private var selectedTab = 1 // 初期タブを真ん中に設定
     @StateObject private var webViewModel = WebViewModel()
     
     var body: some View {
         ZStack {
-            TabView {
-                WebViewWrapper(url: URL(string: "https://scrapbox.io/\(projectName)")!, webViewModel: webViewModel)
-                    .tabItem {
-                        Text("メイン")
-                    }
+            TabView(selection: $selectedTab) {
+                
                 WebViewWrapper(url: URL(string: "https://scrapbox.io/\(projectName)/ToDo")!, webViewModel: webViewModel)
                     .tabItem {
                         Text("ToDo")
                     }
+                    .tag(0) // 真ん中のビューにタグを設定
+                
+                WebViewWrapper(url: URL(string: "https://scrapbox.io/\(projectName)")!, webViewModel: webViewModel)
+                    .tabItem {
+                        Text("メイン")
+                    }
+                    .tag(1)
+                
                 WebViewWrapper(url: URL(string: "https://scrapbox.io/\(projectName)/\(getCurrentDate())")!, webViewModel: webViewModel)
                     .tabItem {
                         Text("日付")
                     }
+                    .tag(2)
             }
             .tabViewStyle(PageTabViewStyle())
             
@@ -69,6 +76,7 @@ struct ContentView: View {
         }
         .onAppear {
             projectName = UserDefaults.standard.string(forKey: "ProjectName") ?? ""
+            selectedTab = 1 // アプリ起動時に真ん中のビューを表示
         }
     }
     
