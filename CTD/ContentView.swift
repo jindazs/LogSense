@@ -31,24 +31,24 @@ struct ContentView: View {
                         Text("ToDo")
                     }
                     .tag(0)
-                    .ignoresSafeArea(edges: .bottom)
+                    .ignoresSafeArea(edges: .all)
                 
                 WebViewWrapper(url: URL(string: "https://scrapbox.io/\(projectName)")!, webViewModel: mainWebViewModel)
                     .tabItem {
                         Text("メイン")
                     }
                     .tag(1)
-                    .ignoresSafeArea(edges: .bottom)
+                    .ignoresSafeArea(edges: .all)
                 
                 WebViewWrapper(url: URL(string: "https://scrapbox.io/\(projectName)/\(getCurrentDate())")!, webViewModel: dateWebViewModel)
                     .tabItem {
                         Text("日付")
                     }
                     .tag(2)
-                    .ignoresSafeArea(edges: .bottom)
+                    .ignoresSafeArea(edges: .all)
             }
             .tabViewStyle(PageTabViewStyle())
-            .ignoresSafeArea(edges: .bottom)
+            .ignoresSafeArea(edges: .all)
             
             VStack {
                 Spacer()
@@ -138,15 +138,25 @@ struct ContentView: View {
 
 class CustomWebView: WKWebView {
     override var inputAccessoryView: UIView? {
-        let accessoryView = UIView(frame: CGRect(x: 0, y: 0, width: UIScreen.main.bounds.width, height: 44))
+        let accessoryView = UIView(frame: CGRect(x: 0, y: 0, width: UIScreen.main.bounds.width, height: 30))
         accessoryView.backgroundColor = UIColor.systemGray5
         
-        let button = UIButton(type: .system)
-        button.setTitle("今日の日付を挿入", for: .normal)
-        button.frame = CGRect(x: 10, y: 5, width: 150, height: 34)
-        button.addTarget(self, action: #selector(insertDate), for: .touchUpInside)
+        let buttonStack = UIStackView(frame: accessoryView.bounds)
+        buttonStack.axis = .horizontal
+        buttonStack.distribution = .fillEqually
         
-        accessoryView.addSubview(button)
+        let dateButton = UIButton(type: .system)
+        dateButton.setTitle("Today", for: .normal)
+        dateButton.addTarget(self, action: #selector(insertDate), for: .touchUpInside)
+        
+        let dismissButton = UIButton(type: .system)
+        dismissButton.setTitle("Done", for: .normal)
+        dismissButton.addTarget(self, action: #selector(dismissKeyboard), for: .touchUpInside)
+        
+        buttonStack.addArrangedSubview(dateButton)
+        buttonStack.addArrangedSubview(dismissButton)
+        
+        accessoryView.addSubview(buttonStack)
         
         return accessoryView
     }
@@ -158,6 +168,10 @@ class CustomWebView: WKWebView {
         
         let script = "document.execCommand('insertText', false, '\(dateString)');"
         self.evaluateJavaScript(script, completionHandler: nil)
+    }
+    
+    @objc func dismissKeyboard() {
+        self.endEditing(true)
     }
 }
 
