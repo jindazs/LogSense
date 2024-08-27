@@ -7,51 +7,93 @@ class WebViewModel: ObservableObject {
     func goBack() {
         webView?.goBack()
     }
+    
+    func reload() {
+        webView?.reload()
+    }
 }
 
 struct ContentView: View {
     @State private var projectName: String = UserDefaults.standard.string(forKey: "ProjectName") ?? ""
     @State private var showSettings: Bool = false
     @State private var selectedTab = 1 // 初期タブを真ん中に設定
-    @StateObject private var webViewModel = WebViewModel()
+    
+    @StateObject private var mainWebViewModel = WebViewModel()
+    @StateObject private var todoWebViewModel = WebViewModel()
+    @StateObject private var dateWebViewModel = WebViewModel()
     
     var body: some View {
         ZStack {
             TabView(selection: $selectedTab) {
                 
-                WebViewWrapper(url: URL(string: "https://scrapbox.io/\(projectName)/ToDo")!, webViewModel: webViewModel)
+                WebViewWrapper(url: URL(string: "https://scrapbox.io/\(projectName)/ToDo")!, webViewModel: todoWebViewModel)
                     .tabItem {
                         Text("ToDo")
                     }
-                    .tag(0) // 真ん中のビューにタグを設定
+                    .tag(0)
+                    .ignoresSafeArea(edges: .bottom)
                 
-                WebViewWrapper(url: URL(string: "https://scrapbox.io/\(projectName)")!, webViewModel: webViewModel)
+                WebViewWrapper(url: URL(string: "https://scrapbox.io/\(projectName)")!, webViewModel: mainWebViewModel)
                     .tabItem {
                         Text("メイン")
                     }
                     .tag(1)
+                    .ignoresSafeArea(edges: .bottom)
                 
-                WebViewWrapper(url: URL(string: "https://scrapbox.io/\(projectName)/\(getCurrentDate())")!, webViewModel: webViewModel)
+                WebViewWrapper(url: URL(string: "https://scrapbox.io/\(projectName)/\(getCurrentDate())")!, webViewModel: dateWebViewModel)
                     .tabItem {
                         Text("日付")
                     }
                     .tag(2)
+                    .ignoresSafeArea(edges: .bottom)
             }
             .tabViewStyle(PageTabViewStyle())
+            .ignoresSafeArea(edges: .bottom)
             
             VStack {
                 Spacer()
                 
                 HStack {
                     Button(action: {
-                        webViewModel.goBack()
+                        switch selectedTab {
+                        case 0:
+                            todoWebViewModel.goBack()
+                        case 1:
+                            mainWebViewModel.goBack()
+                        case 2:
+                            dateWebViewModel.goBack()
+                        default:
+                            break
+                        }
                     }) {
                         Image(systemName: "arrow.backward")
                             .resizable()
                             .scaledToFit()
                             .frame(width: 15, height: 15)
                             .padding(10)
-                            .background(Circle().fill(Color.gray.opacity(0.5)))
+                            .background(Circle().fill(Color.white.opacity(0.8)))
+                    }
+                    
+                    Spacer()
+                    
+                    Button(action: {
+                        switch selectedTab {
+                        case 0:
+                            todoWebViewModel.reload()
+                        case 1:
+                            mainWebViewModel.reload()
+                        case 2:
+                            dateWebViewModel.reload()
+                        default:
+                            break
+                        }
+                    }) {
+                        Image(systemName: "arrow.clockwise")
+                            .resizable()
+                            .scaledToFit()
+                            .frame(width: 15, height: 15)
+                            .padding(10)
+                            .background(Circle().fill(Color.white.opacity(0.8)))
                     }
                     
                     Spacer()
@@ -64,10 +106,11 @@ struct ContentView: View {
                             .scaledToFit()
                             .frame(width: 15, height: 15)
                             .padding(10)
-                            .background(Circle().fill(Color.gray.opacity(0.5)))
+                            .background(Circle().fill(Color.white.opacity(0.8)))
                     }
                 }
-                .padding([.leading, .trailing, .bottom], 20)
+                .padding([.leading, .trailing], 20)
+                .padding(.bottom, -15)
                 .background(Color.clear)
             }
         }
