@@ -11,6 +11,14 @@ class WebViewModel: ObservableObject {
     func reload() {
         webView?.reload()
     }
+    
+    func reloadModel(with url: URL) {
+        // 指定されたURLでWebViewを再読み込みする
+        if let webView = webView {
+            let request = URLRequest(url: url)
+            webView.load(request)
+        }
+    }
 }
 
 struct ContentView: View {
@@ -94,6 +102,24 @@ struct ContentView: View {
                             .frame(width: 15, height: 15)
                             .padding(10)
                             .background(Circle().fill(Color.white.opacity(0.8)))
+                            .onTapGesture(count: 2) {
+                                switch selectedTab {
+                                case 0:
+                                    let todourl = URL(string: "https://scrapbox.io/\(projectName)/ToDo")!
+                                    todoWebViewModel.reloadModel(with: todourl)
+                                    print("double tap")
+                                case 1:
+                                    let mainurl = URL(string: "https://scrapbox.io/\(projectName)")!
+                                    mainWebViewModel.reloadModel(with: mainurl)
+                                    print("double tap")
+                                case 2:
+                                    let todayurl = URL(string: "https://scrapbox.io/\(projectName)/\(getCurrentDate())")!
+                                    dateWebViewModel.reloadModel(with: todayurl)
+                                    print("double tap")
+                                default:
+                                    break
+                                }
+                            }
                     }
                     
                     Spacer()
