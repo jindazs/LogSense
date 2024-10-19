@@ -3,149 +3,133 @@ import WebKit
 
 class WebViewModel: ObservableObject {
     @Published var webView: CustomWebView?
+    private var initialURL: URL?
+    
+    init(url: URL) {
+        self.webView = CustomWebView()
+        self.initialURL = url
+        loadInitialPage()
+    }
+    
+    private func loadInitialPage() {
+        if let initialURL = initialURL {
+            let request = URLRequest(url: initialURL)
+            webView?.load(request)
+        }
+    }
     
     func goBack() {
         webView?.goBack()
+    }
+    
+    func goForward() {
+        webView?.goForward()
     }
     
     func reload() {
         webView?.reload()
     }
     
-    func reloadModel(with url: URL) {
-        // 指定されたURLでWebViewを再読み込みする
-        if let webView = webView {
-            let request = URLRequest(url: url)
-            webView.load(request)
-        }
+    func resetToInitialPage() {
+        loadInitialPage() // 初期ページを再度読み込む
+    }
+    
+    func loadURL(_ url: URL) {
+        let request = URLRequest(url: url)
+        webView?.load(request)
     }
 }
 
 struct ContentView: View {
     @State private var projectName: String = UserDefaults.standard.string(forKey: "ProjectName") ?? ""
     @State private var showSettings: Bool = false
-    @State private var selectedTab = 1 // 初期タブを真ん中に設定
+    @State private var selectedTab = 1 // 初期タブをメインに設定
+    @State private var currentDate = "" // 日付を保持するState
     
-    @StateObject private var mainWebViewModel = WebViewModel()
-    @StateObject private var todoWebViewModel = WebViewModel()
-    @StateObject private var dateWebViewModel = WebViewModel()
+    @StateObject private var mainWebViewModel = WebViewModel(url: URL(string: "https://scrapbox.io/\(UserDefaults.standard.string(forKey: "ProjectName") ?? "")")!)
+    @StateObject private var todoWebViewModel = WebViewModel(url: URL(string: "https://scrapbox.io/\(UserDefaults.standard.string(forKey: "ProjectName") ?? "")/ToDo")!)
+    @StateObject private var dateWebViewModel = WebViewModel(url: URL(string: "https://scrapbox.io/\(UserDefaults.standard.string(forKey: "ProjectName") ?? "")")!) // 後で日付を設定
     
     var body: some View {
         ZStack {
-            TabView(selection: $selectedTab) {
-                
-                WebViewWrapper(url: URL(string: "https://scrapbox.io/\(projectName)/ToDo")!, webViewModel: todoWebViewModel)
-                    .tabItem {
-                        Text("ToDo")
-                    }
-                    .tag(0)
+            // 各WebViewを事前に生成してキャッシュする
+            if selectedTab == 0 {
+                WebViewWrapper(webViewModel: todoWebViewModel)
                     .ignoresSafeArea(edges: .all)
-                
-                WebViewWrapper(url: URL(string: "https://scrapbox.io/\(projectName)")!, webViewModel: mainWebViewModel)
-                    .tabItem {
-                        Text("メイン")
-                    }
-                    .tag(1)
+            } else if selectedTab == 1 {
+                WebViewWrapper(webViewModel: mainWebViewModel)
                     .ignoresSafeArea(edges: .all)
-                
-                WebViewWrapper(url: URL(string: "https://scrapbox.io/\(projectName)/\(getCurrentDate())")!, webViewModel: dateWebViewModel)
-                    .tabItem {
-                        Text("日付")
-                    }
-                    .tag(2)
+            } else if selectedTab == 2 {
+                WebViewWrapper(webViewModel: dateWebViewModel)
                     .ignoresSafeArea(edges: .all)
             }
-            .tabViewStyle(PageTabViewStyle())
-            .ignoresSafeArea(edges: .all)
             
             VStack {
                 Spacer()
-                
+
+                // アイコンを含むボトムバー
                 HStack {
                     Button(action: {
-                        switch selectedTab {
-                        case 0:
-                            todoWebViewModel.goBack()
-                        case 1:
-                            mainWebViewModel.goBack()
-                        case 2:
-                            dateWebViewModel.goBack()
-                        default:
-                            break
-                        }
+                        selectedTab = 0
                     }) {
-                        Image(systemName: "arrow.backward")
+                        Image(systemName: "list.bullet")
                             .resizable()
                             .scaledToFit()
-                            .frame(width: 15, height: 15)
-                            .padding(10)
-                            .background(Circle().fill(Color.white.opacity(0.8)))
+                            .frame(width: 25, height: 25)
+                            .padding()
+                            .background(Circle().fill(selectedTab == 0 ? Color.gray.opacity(0.2) : Color.clear))
+                    }
+                    .onTapGesture(count: 2) {
+                        todoWebViewModel.resetToInitialPage() // ダブルタップで初期ページにリセット
                     }
                     
                     Spacer()
                     
                     Button(action: {
-                        switch selectedTab {
-                        case 0:
-                            todoWebViewModel.reload()
-                        case 1:
-                            mainWebViewModel.reload()
-                        case 2:
-                            dateWebViewModel.reload()
-                        default:
-                            break
-                        }
+                        selectedTab = 1
                     }) {
-                        Image(systemName: "arrow.clockwise")
+                        Image(systemName: "house.fill")
                             .resizable()
                             .scaledToFit()
-                            .frame(width: 15, height: 15)
-                            .padding(10)
-                            .background(Circle().fill(Color.white.opacity(0.8)))
-                            .onTapGesture(count: 2) {
-                                switch selectedTab {
-                                case 0:
-                                    let todourl = URL(string: "https://scrapbox.io/\(projectName)/ToDo")!
-                                    todoWebViewModel.reloadModel(with: todourl)
-                                    print("double tap")
-                                case 1:
-                                    let mainurl = URL(string: "https://scrapbox.io/\(projectName)")!
-                                    mainWebViewModel.reloadModel(with: mainurl)
-                                    print("double tap")
-                                case 2:
-                                    let todayurl = URL(string: "https://scrapbox.io/\(projectName)/\(getCurrentDate())")!
-                                    dateWebViewModel.reloadModel(with: todayurl)
-                                    print("double tap")
-                                default:
-                                    break
-                                }
-                            }
+                            .frame(width: 25, height: 25)
+                            .padding()
+                            .background(Circle().fill(selectedTab == 1 ? Color.gray.opacity(0.2) : Color.clear))
+                    }
+                    .onTapGesture(count: 2) {
+                        mainWebViewModel.resetToInitialPage() // ダブルタップで初期ページにリセット
                     }
                     
                     Spacer()
                     
                     Button(action: {
-                        showSettings.toggle()
+                        selectedTab = 2
                     }) {
-                        Image(systemName: "gearshape")
+                        Image(systemName: "calendar")
                             .resizable()
                             .scaledToFit()
-                            .frame(width: 15, height: 15)
-                            .padding(10)
-                            .background(Circle().fill(Color.white.opacity(0.8)))
+                            .frame(width: 25, height: 25)
+                            .padding()
+                            .background(Circle().fill(selectedTab == 2 ? Color.gray.opacity(0.2) : Color.clear))
+                    }
+                    .onTapGesture(count: 2) {
+                        // onAppearで実行した処理を再実行する
+                        let dateUrl = URL(string: "https://scrapbox.io/\(projectName)/\(currentDate)")!
+                        dateWebViewModel.loadURL(dateUrl) // 日付に基づくURLを再度ロード
                     }
                 }
-                .padding([.leading, .trailing], 20)
-                .padding(.bottom, -15)
-                .background(Color.clear)
+                .padding([.leading, .trailing], 40)
+                .padding(.bottom, 0)
+                .background(Color.white)
             }
-        }
-        .sheet(isPresented: $showSettings) {
-            SettingsView(projectName: $projectName)
         }
         .onAppear {
             projectName = UserDefaults.standard.string(forKey: "ProjectName") ?? ""
-            selectedTab = 1 // アプリ起動時に真ん中のビューを表示
+            currentDate = getCurrentDate() // アプリ起動時に現在の日付を取得
+            let dateUrl = URL(string: "https://scrapbox.io/\(projectName)/\(currentDate)")!
+            dateWebViewModel.loadURL(dateUrl) // 日付URLをロード
+        }
+        .sheet(isPresented: $showSettings) {
+            SettingsView(projectName: $projectName)
         }
     }
     
@@ -153,12 +137,6 @@ struct ContentView: View {
         let dateFormatter = DateFormatter()
         dateFormatter.dateFormat = "yyyy-MM-dd"
         return dateFormatter.string(from: Date())
-    }
-    
-    func getCurrentDateForInput() -> String {
-        let dateFormatter = DateFormatter()
-        dateFormatter.dateFormat = "M月d日"
-        return "#\(dateFormatter.string(from: Date()))"
     }
 }
 
@@ -202,29 +180,14 @@ class CustomWebView: WKWebView {
 }
 
 struct WebViewWrapper: UIViewRepresentable {
-    let url: URL
     @ObservedObject var webViewModel: WebViewModel
     
     func makeUIView(context: Context) -> CustomWebView {
-        let webView = CustomWebView()
-        
-        // カスタムユーザーエージェントを設定
-        webView.customUserAgent = "Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.0 Mobile/15E148 Safari/604.1"
-        
-        webViewModel.webView = webView
-        
-        let request = URLRequest(url: url)
-        webView.load(request)
-        
-        return webView
+        return webViewModel.webView ?? CustomWebView()
     }
     
     func updateUIView(_ webView: CustomWebView, context: Context) {
-        // URLが更新された場合に再度ロード
-        if webView.url != url {
-            let request = URLRequest(url: url)
-            webView.load(request)
-        }
+        // キャッシュされたWebViewをそのまま使用するので、ここでは何もしません
     }
 }
 
