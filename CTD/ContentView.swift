@@ -98,6 +98,9 @@ struct ContentView: View {
                     .onTapGesture(count: 2) {
                         mainWebViewModel.resetToInitialPage() // ダブルタップで初期ページにリセット
                     }
+                    .onTapGesture(count: 3) { // 3回タップでSettingsViewを表示
+                        showSettings.toggle()
+                    }
                     
                     Spacer()
                     
@@ -112,13 +115,14 @@ struct ContentView: View {
                             .background(Circle().fill(selectedTab == 2 ? Color.gray.opacity(0.2) : Color.clear))
                     }
                     .onTapGesture(count: 2) {
-                        // onAppearで実行した処理を再実行する
+                        // ダブルタップ時にcurrentDateを再取得し、URLを再構築
+                        currentDate = getCurrentDate() // 最新の日付を取得
                         let dateUrl = URL(string: "https://scrapbox.io/\(projectName)/\(currentDate)")!
-                        dateWebViewModel.loadURL(dateUrl) // 日付に基づくURLを再度ロード
+                        dateWebViewModel.loadURL(dateUrl) // 最新の日付URLをロード
                     }
                 }
                 .padding([.leading, .trailing], 40)
-                .padding(.bottom, 0)
+                .padding(.bottom, 0) // 指定されたpaddingを0に設定
                 .background(Color.white)
             }
         }
@@ -141,6 +145,15 @@ struct ContentView: View {
 }
 
 class CustomWebView: WKWebView {
+    override init(frame: CGRect, configuration: WKWebViewConfiguration) {
+        super.init(frame: frame, configuration: configuration)
+        self.allowsBackForwardNavigationGestures = true // スワイプで進む・戻るを有効にする
+    }
+    
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+    
     override var inputAccessoryView: UIView? {
         let accessoryView = UIView(frame: CGRect(x: 0, y: 0, width: UIScreen.main.bounds.width, height: 30))
         accessoryView.backgroundColor = UIColor.systemGray5
@@ -183,7 +196,9 @@ struct WebViewWrapper: UIViewRepresentable {
     @ObservedObject var webViewModel: WebViewModel
     
     func makeUIView(context: Context) -> CustomWebView {
-        return webViewModel.webView ?? CustomWebView()
+        let webView = webViewModel.webView ?? CustomWebView()
+        webViewModel.webView = webView
+        return webView
     }
     
     func updateUIView(_ webView: CustomWebView, context: Context) {
