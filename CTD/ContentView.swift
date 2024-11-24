@@ -191,9 +191,15 @@ class CustomWebView: WKWebView {
     }
     
     @objc func dismissKeyboard() {
-        self.endEditing(true)
+        let script = "document.activeElement.blur();"
+        self.evaluateJavaScript(script) { _, error in
+            if let error = error {
+                print("Failed to dismiss keyboard: \(error.localizedDescription)")
+            }
+        }
     }
 }
+
 
 struct WebViewWrapper: UIViewRepresentable {
     @ObservedObject var webViewModel: WebViewModel
