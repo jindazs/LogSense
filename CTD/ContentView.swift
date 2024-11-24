@@ -51,80 +51,76 @@ struct ContentView: View {
     @StateObject private var dateWebViewModel = WebViewModel(url: URL(string: "https://scrapbox.io/\(UserDefaults.standard.string(forKey: "ProjectName") ?? "")")!) // 後で日付を設定
     
     var body: some View {
-        ZStack {
+        VStack(spacing: 0) {
             // 各WebViewを事前に生成してキャッシュする
             if selectedTab == 0 {
                 WebViewWrapper(webViewModel: todoWebViewModel)
-                    .ignoresSafeArea(edges: .all)
+                    .ignoresSafeArea(edges: .bottom)
             } else if selectedTab == 1 {
                 WebViewWrapper(webViewModel: mainWebViewModel)
-                    .ignoresSafeArea(edges: .all)
+                    .ignoresSafeArea(edges: .bottom)
             } else if selectedTab == 2 {
                 WebViewWrapper(webViewModel: dateWebViewModel)
-                    .ignoresSafeArea(edges: .all)
+                    .ignoresSafeArea(edges: .bottom)
             }
             
-            VStack {
-                Spacer()
-
-                // アイコンを含むボトムバー
-                HStack {
-                    Button(action: {
-                        selectedTab = 0
-                    }) {
-                        Image(systemName: "list.bullet")
-                            .resizable()
-                            .scaledToFit()
-                            .frame(width: 25, height: 25)
-                            .padding()
-                            .background(Circle().fill(selectedTab == 0 ? Color.gray.opacity(0.2) : Color.clear))
-                    }
-                    .onTapGesture(count: 2) {
-                        todoWebViewModel.resetToInitialPage() // ダブルタップで初期ページにリセット
-                    }
-                    
-                    Spacer()
-                    
-                    Button(action: {
-                        selectedTab = 1
-                    }) {
-                        Image(systemName: "house.fill")
-                            .resizable()
-                            .scaledToFit()
-                            .frame(width: 25, height: 25)
-                            .padding()
-                            .background(Circle().fill(selectedTab == 1 ? Color.gray.opacity(0.2) : Color.clear))
-                    }
-                    .onTapGesture(count: 2) {
-                        mainWebViewModel.resetToInitialPage() // ダブルタップで初期ページにリセット
-                    }
-                    .onTapGesture(count: 3) { // 3回タップでSettingsViewを表示
-                        showSettings.toggle()
-                    }
-                    
-                    Spacer()
-                    
-                    Button(action: {
-                        selectedTab = 2
-                    }) {
-                        Image(systemName: "calendar")
-                            .resizable()
-                            .scaledToFit()
-                            .frame(width: 25, height: 25)
-                            .padding()
-                            .background(Circle().fill(selectedTab == 2 ? Color.gray.opacity(0.2) : Color.clear))
-                    }
-                    .onTapGesture(count: 2) {
-                        // ダブルタップ時にcurrentDateを再取得し、URLを再構築
-                        currentDate = getCurrentDate() // 最新の日付を取得
-                        let dateUrl = URL(string: "https://scrapbox.io/\(projectName)/\(currentDate)")!
-                        dateWebViewModel.loadURL(dateUrl) // 最新の日付URLをロード
-                    }
+            // アイコンを含むボトムバー
+            HStack {
+                Button(action: {
+                    selectedTab = 0
+                }) {
+                    Image(systemName: "list.bullet")
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 25, height: 25)
+                        .padding()
+                        .background(Circle().fill(selectedTab == 0 ? Color.gray.opacity(0.2) : Color.clear))
                 }
-                .padding([.leading, .trailing], 40)
-                .padding(.bottom, 0) // 指定されたpaddingを0に設定
-                .background(Color.white)
+                .onTapGesture(count: 2) {
+                    todoWebViewModel.resetToInitialPage() // ダブルタップで初期ページにリセット
+                }
+                
+                Spacer()
+                
+                Button(action: {
+                    selectedTab = 1
+                }) {
+                    Image(systemName: "house.fill")
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 25, height: 25)
+                        .padding()
+                        .background(Circle().fill(selectedTab == 1 ? Color.gray.opacity(0.2) : Color.clear))
+                }
+                .onTapGesture(count: 2) {
+                    mainWebViewModel.resetToInitialPage() // ダブルタップで初期ページにリセット
+                }
+                .onTapGesture(count: 3) { // 3回タップでSettingsViewを表示
+                    showSettings.toggle()
+                }
+                
+                Spacer()
+                
+                Button(action: {
+                    selectedTab = 2
+                }) {
+                    Image(systemName: "calendar")
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 25, height: 25)
+                        .padding()
+                        .background(Circle().fill(selectedTab == 2 ? Color.gray.opacity(0.2) : Color.clear))
+                }
+                .onTapGesture(count: 2) {
+                    // ダブルタップ時にcurrentDateを再取得し、URLを再構築
+                    currentDate = getCurrentDate() // 最新の日付を取得
+                    let dateUrl = URL(string: "https://scrapbox.io/\(projectName)/\(currentDate)")!
+                    dateWebViewModel.loadURL(dateUrl) // 最新の日付URLをロード
+                }
             }
+            .padding([.leading, .trailing], 40)
+            .padding(.bottom, 0) // 指定されたpaddingを0に設定
+            .background(Color.white)
         }
         .onAppear {
             projectName = UserDefaults.standard.string(forKey: "ProjectName") ?? ""
@@ -148,6 +144,13 @@ class CustomWebView: WKWebView {
     override init(frame: CGRect, configuration: WKWebViewConfiguration) {
         super.init(frame: frame, configuration: configuration)
         self.allowsBackForwardNavigationGestures = true // スワイプで進む・戻るを有効にする
+        
+        // User Agentの設定
+        if UIDevice.current.userInterfaceIdiom == .phone {
+            self.customUserAgent = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1"
+        } else {
+            self.customUserAgent = "Mozilla/5.0 (iPad; CPU OS 15_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.0 Mobile/15E148 Safari/604.1"
+        }
     }
     
     required init?(coder: NSCoder) {
