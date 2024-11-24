@@ -140,10 +140,11 @@ struct ContentView: View {
     }
 }
 
-class CustomWebView: WKWebView {
+class CustomWebView: WKWebView, WKNavigationDelegate {
     override init(frame: CGRect, configuration: WKWebViewConfiguration) {
         super.init(frame: frame, configuration: configuration)
         self.allowsBackForwardNavigationGestures = true // スワイプで進む・戻るを有効にする
+        self.navigationDelegate = self // NavigationDelegateを設定
         
         // User Agentの設定
         if UIDevice.current.userInterfaceIdiom == .phone {
@@ -198,7 +199,21 @@ class CustomWebView: WKWebView {
             }
         }
     }
+    
+    // 外部リンクをデフォルトブラウザで開く
+    func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+        if let url = navigationAction.request.url, navigationAction.navigationType == .linkActivated {
+            if url.host != nil {
+                // 外部ブラウザで開く
+                UIApplication.shared.open(url, options: [:], completionHandler: nil)
+                decisionHandler(.cancel)
+                return
+            }
+        }
+        decisionHandler(.allow)
+    }
 }
+
 
 
 struct WebViewWrapper: UIViewRepresentable {
