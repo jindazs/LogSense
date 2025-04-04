@@ -8,12 +8,11 @@ struct UserDefaultsKeys {
 class WebViewModel: ObservableObject {
     @Published var webView: CustomWebView?
 
-    // WebView生成時に初期URLをロード
     init(url: URL) {
-        DispatchQueue.main.async { [weak self] in
-            self?.webView = CustomWebView()
-            self?.loadInitialPage(url)
-        }
+        // ① 直接 webView を生成する
+        self.webView = CustomWebView()
+        // ② 初期ページをロード
+        loadInitialPage(url)
     }
 
     private func loadInitialPage(_ url: URL) {
@@ -50,7 +49,6 @@ struct ContentView: View {
     @State private var selectedTab = 1
     @State private var currentDate = ""
 
-    // タブごとにWebViewModelを用意してキャッシュ
     @StateObject private var mainWebViewModel = WebViewModel(
         url: URL(string: "https://scrapbox.io/\(UserDefaults.standard.string(forKey: UserDefaultsKeys.projectName) ?? "")")!
     )
@@ -63,7 +61,6 @@ struct ContentView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // 選択中のタブに応じて表示するWebViewを切り替え
             if selectedTab == 0 {
                 WebViewWrapper(webViewModel: todoWebViewModel)
                     .ignoresSafeArea(edges: .bottom)
@@ -75,9 +72,7 @@ struct ContentView: View {
                     .ignoresSafeArea(edges: .bottom)
             }
 
-            // ボトムバー
             HStack {
-                // ToDoタブ
                 Button(action: {
                     selectedTab = 0
                 }) {
@@ -94,7 +89,6 @@ struct ContentView: View {
 
                 Spacer()
 
-                // メインタブ
                 Button(action: {
                     selectedTab = 1
                 }) {
@@ -114,7 +108,6 @@ struct ContentView: View {
 
                 Spacer()
 
-                // 日付タブ
                 Button(action: {
                     selectedTab = 2
                 }) {
@@ -126,7 +119,6 @@ struct ContentView: View {
                         .background(Circle().fill(selectedTab == 2 ? Color.gray.opacity(0.3) : Color.clear))
                 }
                 .onTapGesture(count: 2) {
-                    // ダブルタップ時に現在の日付URLを再ロード
                     currentDate = getCurrentDate()
                     let dateUrl = URL(string: "https://scrapbox.io/\(projectName)/\(currentDate)")!
                     dateWebViewModel.loadURL(dateUrl)
@@ -160,7 +152,6 @@ class CustomWebView: WKWebView, WKNavigationDelegate {
         self.allowsBackForwardNavigationGestures = true
         self.navigationDelegate = self
 
-        // UserAgentを統一
         let userAgent = "Mozilla/5.0 (iOS; CPU iOS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1"
         self.customUserAgent = userAgent
 
@@ -172,7 +163,57 @@ class CustomWebView: WKWebView, WKNavigationDelegate {
         fatalError("init(coder:) has not been implemented")
     }
 
-    // WKNavigationDelegate: ページ遷移の可否を決定
+    // -----------------------------
+    // ここからが「Today」ボタンと「Done」ボタンの実装
+    // -----------------------------
+    override var inputAccessoryView: UIView? {
+        let accessoryView = UIView(frame: CGRect(x: 0, y: 0, width: UIScreen.main.bounds.width, height: 40))
+        accessoryView.backgroundColor = UIColor.systemGray5
+
+        let buttonStack = UIStackView(frame: accessoryView.bounds)
+        buttonStack.axis = .horizontal
+        buttonStack.distribution = .fillEqually
+
+        let dateButton = UIButton(type: .system)
+        dateButton.setTitle("Today", for: .normal)
+        dateButton.addTarget(self, action: #selector(insertDate), for: .touchUpInside)
+
+        let dismissButton = UIButton(type: .system)
+        dismissButton.setTitle("Done", for: .normal)
+        dismissButton.addTarget(self, action: #selector(dismissKeyboard), for: .touchUpInside)
+
+        buttonStack.addArrangedSubview(dateButton)
+        buttonStack.addArrangedSubview(dismissButton)
+        accessoryView.addSubview(buttonStack)
+
+        return accessoryView
+    }
+
+    // 「Today」ボタンが押されたときに、日付テキストを挿入
+    @objc func insertDate() {
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "M月d日"
+        let dateString = "#\(dateFormatter.string(from: Date()))"
+
+        // テキストエリアに直接文字を注入
+        let script = "document.execCommand('insertText', false, '\(dateString)');"
+        self.evaluateJavaScript(script, completionHandler: nil)
+    }
+
+    // 「Done」ボタンでキーボードを閉じる
+    @objc func dismissKeyboard() {
+        let script = "document.activeElement.blur();"
+        self.evaluateJavaScript(script) { _, error in
+            if let error = error {
+                print("Failed to dismiss keyboard: \(error.localizedDescription)")
+            }
+        }
+    }
+    // -----------------------------
+    // ここまでがキーボード上のボタン実装
+    // -----------------------------
+
+    // MARK: - WKNavigationDelegate
     func webView(_ webView: WKWebView,
                  decidePolicyFor navigationAction: WKNavigationAction,
                  decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
@@ -182,7 +223,7 @@ class CustomWebView: WKWebView, WKNavigationDelegate {
             return
         }
 
-        // GoogleログインやScrapbox、その他アプリ内で処理したいドメイン（"cosense"なども追加）
+        // GoogleログインやScrapbox、cosenseなど
         let allowInAppIfHostContains = [
             "scrapbox.io",
             "google",
@@ -190,30 +231,30 @@ class CustomWebView: WKWebView, WKNavigationDelegate {
             "cosense"
         ]
 
-        // ホスト名で判定して「アプリ内で開きたいドメイン」なら外部ブラウザに飛ばさない
+        // ホスト名に特定文字列が含まれたらアプリ内で開く
         if let host = url.host,
            allowInAppIfHostContains.contains(where: { host.contains($0) }) {
-            // GoogleログインページやScrapboxのURLはアプリ内で許可
             decisionHandler(.allow)
         }
         else if navigationAction.navigationType == .linkActivated,
                 UIApplication.shared.canOpenURL(url) {
-            // 上記以外の外部リンクは、外部ブラウザ(Safari)で開く
+            // 外部リンクはブラウザで開く
             UIApplication.shared.open(url, options: [:], completionHandler: nil)
             decisionHandler(.cancel)
         }
         else {
-            // 直打ちURLなどはそのまま許可
             decisionHandler(.allow)
         }
     }
 
-    // ページ読み込み完了後にCookieを保存
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        // ページ読み込み完了時にCookieを保存
         saveCookies()
     }
 
-    // CookieをWKWebsiteDataStoreからHTTPCookieStorageに同期
+    // MARK: - Cookie Persistence
+
+    /// WebViewのCookieをHTTPCookieStorageに保存
     private func saveCookies() {
         WKWebsiteDataStore.default().httpCookieStore.getAllCookies { cookies in
             let storage = HTTPCookieStorage.shared
@@ -223,14 +264,11 @@ class CustomWebView: WKWebView, WKNavigationDelegate {
         }
     }
 
-    // 起動時などにHTTPCookieStorageのCookieをWKWebsiteDataStoreに登録
+    /// アプリ起動時などにHTTPCookieStorageに保存してあるCookieをWebViewに反映
     private func loadCookies() {
         let storage = HTTPCookieStorage.shared
         let cookieStore = WKWebsiteDataStore.default().httpCookieStore
-
-        for cookie in storage.cookies ?? [] {
-            cookieStore.setCookie(cookie)
-        }
+        storage.cookies?.forEach { cookieStore.setCookie($0) }
     }
 }
 
@@ -238,7 +276,6 @@ struct WebViewWrapper: UIViewRepresentable {
     @ObservedObject var webViewModel: WebViewModel
 
     func makeUIView(context: Context) -> CustomWebView {
-        // まだWebViewが生成されていない場合のみ初期化
         if webViewModel.webView == nil {
             webViewModel.webView = CustomWebView()
         }
@@ -246,7 +283,7 @@ struct WebViewWrapper: UIViewRepresentable {
     }
 
     func updateUIView(_ uiView: CustomWebView, context: Context) {
-        // 既存のWebViewを再利用するため、ここでは何もしない
+        // 既存のWebViewを使うので更新処理は不要
     }
 }
 
