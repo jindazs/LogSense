@@ -86,8 +86,8 @@ struct ContentView: View {
                     Image(systemName: "list.bullet")
                         .resizable()
                         .scaledToFit()
-                        .frame(width: 25, height: 25)
-                        .padding()
+                        .frame(width: 12.5, height: 12.5)
+                        .padding(8)
                         .background(Circle().fill(Color.white.opacity(0.9)))
                         .overlay(
                             Circle().stroke(selectedTab == 0 ? Color.gray.opacity(0.3) : Color.clear, lineWidth: 2)
@@ -104,8 +104,8 @@ struct ContentView: View {
                     Image(systemName: "house.fill")
                         .resizable()
                         .scaledToFit()
-                        .frame(width: 25, height: 25)
-                        .padding()
+                        .frame(width: 12.5, height: 12.5)
+                        .padding(8)
                         .background(Circle().fill(Color.white.opacity(0.9)))
                         .overlay(
                             Circle().stroke(selectedTab == 1 ? Color.gray.opacity(0.3) : Color.clear, lineWidth: 2)
@@ -125,8 +125,8 @@ struct ContentView: View {
                     Image(systemName: "calendar")
                         .resizable()
                         .scaledToFit()
-                        .frame(width: 25, height: 25)
-                        .padding()
+                        .frame(width: 12.5, height: 12.5)
+                        .padding(8)
                         .background(Circle().fill(Color.white.opacity(0.9)))
                         .overlay(
                             Circle().stroke(selectedTab == 2 ? Color.gray.opacity(0.3) : Color.clear, lineWidth: 2)
@@ -139,10 +139,7 @@ struct ContentView: View {
                     dateWebViewModel.loadURL(dateUrl)
                 }
             }
-            .padding()
-            .background(Color.white.opacity(0.9))
-            .clipShape(Capsule())
-            .shadow(radius: 4)
+            .padding(.bottom, 30)
         }
         .onAppear {
             projectName = UserDefaults.standard.string(forKey: UserDefaultsKeys.projectName) ?? ""
