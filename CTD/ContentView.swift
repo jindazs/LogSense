@@ -79,7 +79,7 @@ struct ContentView: View {
                     .ignoresSafeArea(edges: .bottom)
             }
 
-            HStack(spacing: 40) {
+            HStack(spacing: 50) {
                 Button(action: {
                     selectedTab = 0
                 }) {
@@ -88,7 +88,11 @@ struct ContentView: View {
                         .scaledToFit()
                         .frame(width: 25, height: 25)
                         .padding()
-                        .background(Circle().fill(selectedTab == 0 ? Color.gray.opacity(0.3) : Color.clear))
+                        .background(Circle().fill(Color.white.opacity(0.9)))
+                        .overlay(
+                            Circle().stroke(selectedTab == 0 ? Color.gray.opacity(0.3) : Color.clear, lineWidth: 2)
+                        )
+                        .shadow(radius: 4)
                 }
                 .onTapGesture(count: 2) {
                     todoWebViewModel.resetToInitialPage()
@@ -102,7 +106,11 @@ struct ContentView: View {
                         .scaledToFit()
                         .frame(width: 25, height: 25)
                         .padding()
-                        .background(Circle().fill(selectedTab == 1 ? Color.gray.opacity(0.3) : Color.clear))
+                        .background(Circle().fill(Color.white.opacity(0.9)))
+                        .overlay(
+                            Circle().stroke(selectedTab == 1 ? Color.gray.opacity(0.3) : Color.clear, lineWidth: 2)
+                        )
+                        .shadow(radius: 4)
                 }
                 .onTapGesture(count: 2) {
                     mainWebViewModel.resetToInitialPage()
@@ -119,7 +127,11 @@ struct ContentView: View {
                         .scaledToFit()
                         .frame(width: 25, height: 25)
                         .padding()
-                        .background(Circle().fill(selectedTab == 2 ? Color.gray.opacity(0.3) : Color.clear))
+                        .background(Circle().fill(Color.white.opacity(0.9)))
+                        .overlay(
+                            Circle().stroke(selectedTab == 2 ? Color.gray.opacity(0.3) : Color.clear, lineWidth: 2)
+                        )
+                        .shadow(radius: 4)
                 }
                 .onTapGesture(count: 2) {
                     currentDate = getCurrentDate()
@@ -131,7 +143,6 @@ struct ContentView: View {
             .background(Color.white.opacity(0.9))
             .clipShape(Capsule())
             .shadow(radius: 4)
-            .padding(.bottom, 30)
         }
         .onAppear {
             projectName = UserDefaults.standard.string(forKey: UserDefaultsKeys.projectName) ?? ""
