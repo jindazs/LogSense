@@ -67,7 +67,7 @@ struct ContentView: View {
     )
 
     var body: some View {
-        VStack(spacing: 0) {
+        ZStack(alignment: .bottom) {
             if selectedTab == 0 {
                 WebViewWrapper(webViewModel: todoWebViewModel)
                     .ignoresSafeArea(edges: .bottom)
@@ -79,7 +79,7 @@ struct ContentView: View {
                     .ignoresSafeArea(edges: .bottom)
             }
 
-            HStack {
+            HStack(spacing: 40) {
                 Button(action: {
                     selectedTab = 0
                 }) {
@@ -93,8 +93,6 @@ struct ContentView: View {
                 .onTapGesture(count: 2) {
                     todoWebViewModel.resetToInitialPage()
                 }
-
-                Spacer()
 
                 Button(action: {
                     selectedTab = 1
@@ -113,8 +111,6 @@ struct ContentView: View {
                     showSettings.toggle()
                 }
 
-                Spacer()
-
                 Button(action: {
                     selectedTab = 2
                 }) {
@@ -131,9 +127,11 @@ struct ContentView: View {
                     dateWebViewModel.loadURL(dateUrl)
                 }
             }
-            .padding([.leading, .trailing], 40)
-            .padding(.bottom, 0)
-            .background(Color.white)
+            .padding()
+            .background(Color.white.opacity(0.9))
+            .clipShape(Capsule())
+            .shadow(radius: 4)
+            .padding(.bottom, 30)
         }
         .onAppear {
             projectName = UserDefaults.standard.string(forKey: UserDefaultsKeys.projectName) ?? ""
