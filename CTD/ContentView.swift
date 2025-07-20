@@ -1,5 +1,5 @@
 import SwiftUI
-@preconcurrency import WebKit
+import WebKit
 
 struct UserDefaultsKeys {
     static let projectName = "ProjectName"
@@ -7,8 +7,10 @@ struct UserDefaultsKeys {
 
 class WebViewModel: ObservableObject {
     @Published var webView: CustomWebView?
+    private var initialURL: URL
 
     init(url: URL) {
+        self.initialURL = url
         // ① 直接 webView を生成する
         self.webView = CustomWebView()
         // ② 初期ページをロード
@@ -34,7 +36,12 @@ class WebViewModel: ObservableObject {
 
     func resetToInitialPage() {
         webView?.stopLoading()
-        webView?.reload()
+        loadInitialPage(initialURL)
+    }
+
+    func updateInitialURL(_ url: URL) {
+        initialURL = url
+        loadInitialPage(url)
     }
 
     func loadURL(_ url: URL) {
@@ -60,7 +67,7 @@ struct ContentView: View {
     )
 
     var body: some View {
-        VStack(spacing: 0) {
+        ZStack(alignment: .bottom) {
             if selectedTab == 0 {
                 WebViewWrapper(webViewModel: todoWebViewModel)
                     .ignoresSafeArea(edges: .bottom)
@@ -72,7 +79,7 @@ struct ContentView: View {
                     .ignoresSafeArea(edges: .bottom)
             }
 
-            HStack {
+            HStack(spacing: 50) {
                 Button(action: {
                     selectedTab = 0
                 }) {
@@ -81,13 +88,15 @@ struct ContentView: View {
                         .scaledToFit()
                         .frame(width: 25, height: 25)
                         .padding()
-                        .background(Circle().fill(selectedTab == 0 ? Color.gray.opacity(0.3) : Color.clear))
+                        .background(Circle().fill(Color.white.opacity(0.9)))
+                        .overlay(
+                            Circle().stroke(selectedTab == 0 ? Color.gray.opacity(0.3) : Color.clear, lineWidth: 2)
+                        )
+                        .shadow(radius: 4)
                 }
                 .onTapGesture(count: 2) {
                     todoWebViewModel.resetToInitialPage()
                 }
-
-                Spacer()
 
                 Button(action: {
                     selectedTab = 1
@@ -97,7 +106,11 @@ struct ContentView: View {
                         .scaledToFit()
                         .frame(width: 25, height: 25)
                         .padding()
-                        .background(Circle().fill(selectedTab == 1 ? Color.gray.opacity(0.3) : Color.clear))
+                        .background(Circle().fill(Color.white.opacity(0.9)))
+                        .overlay(
+                            Circle().stroke(selectedTab == 1 ? Color.gray.opacity(0.3) : Color.clear, lineWidth: 2)
+                        )
+                        .shadow(radius: 4)
                 }
                 .onTapGesture(count: 2) {
                     mainWebViewModel.resetToInitialPage()
@@ -105,8 +118,6 @@ struct ContentView: View {
                 .onTapGesture(count: 3) {
                     showSettings.toggle()
                 }
-
-                Spacer()
 
                 Button(action: {
                     selectedTab = 2
@@ -116,7 +127,11 @@ struct ContentView: View {
                         .scaledToFit()
                         .frame(width: 25, height: 25)
                         .padding()
-                        .background(Circle().fill(selectedTab == 2 ? Color.gray.opacity(0.3) : Color.clear))
+                        .background(Circle().fill(Color.white.opacity(0.9)))
+                        .overlay(
+                            Circle().stroke(selectedTab == 2 ? Color.gray.opacity(0.3) : Color.clear, lineWidth: 2)
+                        )
+                        .shadow(radius: 4)
                 }
                 .onTapGesture(count: 2) {
                     currentDate = getCurrentDate()
@@ -124,9 +139,7 @@ struct ContentView: View {
                     dateWebViewModel.loadURL(dateUrl)
                 }
             }
-            .padding([.leading, .trailing], 40)
-            .padding(.bottom, 0)
-            .background(Color.white)
+            .padding(.bottom, 30)
         }
         .onAppear {
             projectName = UserDefaults.standard.string(forKey: UserDefaultsKeys.projectName) ?? ""
@@ -134,9 +147,22 @@ struct ContentView: View {
             let dateUrl = URL(string: "https://scrapbox.io/\(projectName)/\(currentDate)")!
             dateWebViewModel.loadURL(dateUrl)
         }
-        .sheet(isPresented: $showSettings) {
+        .sheet(isPresented: $showSettings, onDismiss: applyProjectName) {
             SettingsView(projectName: $projectName)
         }
+    }
+
+    private func applyProjectName() {
+        let mainURL = URL(string: "https://scrapbox.io/\(projectName)")!
+        mainWebViewModel.updateInitialURL(mainURL)
+
+        let todoURL = URL(string: "https://scrapbox.io/\(projectName)/ToDo")!
+        todoWebViewModel.updateInitialURL(todoURL)
+
+        let dateBaseURL = mainURL
+        dateWebViewModel.updateInitialURL(dateBaseURL)
+        let dateURL = URL(string: "https://scrapbox.io/\(projectName)/\(currentDate)")!
+        dateWebViewModel.loadURL(dateURL)
     }
 
     func getCurrentDate() -> String {
