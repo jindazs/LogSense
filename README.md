@@ -1,7 +1,8 @@
 # LogSense
-https://scrapbox.io/jindazs/LogSense
+
 **LogSense** は Cosense (旧Scrapbox) のページを閲覧・操作できるシンプルな iOS アプリです。  
 下部のタブバーから「ToDo」「Home」「Today」の各ページに切り替え可能。
+https://scrapbox.io/jindazs/LogSense
 
 ---
 
