@@ -1,5 +1,5 @@
 import SwiftUI
-@preconcurrency import WebKit
+import WebKit
 
 struct UserDefaultsKeys {
     static let projectName = "ProjectName"
@@ -7,8 +7,10 @@ struct UserDefaultsKeys {
 
 class WebViewModel: ObservableObject {
     @Published var webView: CustomWebView?
+    private var initialURL: URL
 
     init(url: URL) {
+        self.initialURL = url
         // ① 直接 webView を生成する
         self.webView = CustomWebView()
         // ② 初期ページをロード
@@ -34,7 +36,12 @@ class WebViewModel: ObservableObject {
 
     func resetToInitialPage() {
         webView?.stopLoading()
-        webView?.reload()
+        loadInitialPage(initialURL)
+    }
+
+    func updateInitialURL(_ url: URL) {
+        initialURL = url
+        loadInitialPage(url)
     }
 
     func loadURL(_ url: URL) {
@@ -134,9 +141,22 @@ struct ContentView: View {
             let dateUrl = URL(string: "https://scrapbox.io/\(projectName)/\(currentDate)")!
             dateWebViewModel.loadURL(dateUrl)
         }
-        .sheet(isPresented: $showSettings) {
+        .sheet(isPresented: $showSettings, onDismiss: applyProjectName) {
             SettingsView(projectName: $projectName)
         }
+    }
+
+    private func applyProjectName() {
+        let mainURL = URL(string: "https://scrapbox.io/\(projectName)")!
+        mainWebViewModel.updateInitialURL(mainURL)
+
+        let todoURL = URL(string: "https://scrapbox.io/\(projectName)/ToDo")!
+        todoWebViewModel.updateInitialURL(todoURL)
+
+        let dateBaseURL = mainURL
+        dateWebViewModel.updateInitialURL(dateBaseURL)
+        let dateURL = URL(string: "https://scrapbox.io/\(projectName)/\(currentDate)")!
+        dateWebViewModel.loadURL(dateURL)
     }
 
     func getCurrentDate() -> String {
