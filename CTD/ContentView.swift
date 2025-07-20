@@ -79,67 +79,76 @@ struct ContentView: View {
                     .ignoresSafeArea(edges: .bottom)
             }
 
-            HStack(spacing: 50) {
-                Button(action: {
-                    selectedTab = 0
-                }) {
-                    Image(systemName: "list.bullet")
-                        .resizable()
-                        .scaledToFit()
-                        .frame(width: 12.5, height: 12.5)
-                        .padding(8)
-                        .background(Circle().fill(Color.white.opacity(0.9)))
-                        .overlay(
-                            Circle().stroke(selectedTab == 0 ? Color.gray.opacity(0.3) : Color.clear, lineWidth: 2)
-                        )
-                        .shadow(radius: 4)
-                }
-                .onTapGesture(count: 2) {
-                    todoWebViewModel.resetToInitialPage()
-                }
-
-                Button(action: {
-                    selectedTab = 1
-                }) {
-                    Image(systemName: "house.fill")
-                        .resizable()
-                        .scaledToFit()
-                        .frame(width: 12.5, height: 12.5)
-                        .padding(8)
-                        .background(Circle().fill(Color.white.opacity(0.9)))
-                        .overlay(
-                            Circle().stroke(selectedTab == 1 ? Color.gray.opacity(0.3) : Color.clear, lineWidth: 2)
-                        )
-                        .shadow(radius: 4)
-                }
-                .onTapGesture(count: 2) {
-                    mainWebViewModel.resetToInitialPage()
-                }
-                .onTapGesture(count: 3) {
-                    showSettings.toggle()
-                }
-
-                Button(action: {
-                    selectedTab = 2
-                }) {
-                    Image(systemName: "calendar")
-                        .resizable()
-                        .scaledToFit()
-                        .frame(width: 12.5, height: 12.5)
-                        .padding(8)
-                        .background(Circle().fill(Color.white.opacity(0.9)))
-                        .overlay(
-                            Circle().stroke(selectedTab == 2 ? Color.gray.opacity(0.3) : Color.clear, lineWidth: 2)
-                        )
-                        .shadow(radius: 4)
-                }
-                .onTapGesture(count: 2) {
-                    currentDate = getCurrentDate()
-                    let dateUrl = URL(string: "https://scrapbox.io/\(projectName)/\(currentDate)")!
-                    dateWebViewModel.loadURL(dateUrl)
+            ZStack {
+                Capsule()
+                    .fill(Color.white.opacity(0.8))
+                    .shadow(radius: 5)
+                    .frame(height: 50)
+                HStack {
+                    Spacer()
+                    // 以下は元のHStack内の3つのButton定義をそのまま貼り付け
+                    Button(action: {
+                        selectedTab = 0
+                    }) {
+                        Image(systemName: "list.bullet")
+                            .resizable()
+                            .scaledToFit()
+                            .frame(width: 12.5, height: 12.5)
+                            .padding(8)
+                            .background(Circle().fill(Color.white.opacity(0.9)))
+                            .overlay(
+                                Circle().stroke(selectedTab == 0 ? Color.gray.opacity(0.3) : Color.clear, lineWidth: 2)
+                            )
+                            .shadow(radius: 4)
+                    }
+                    .onTapGesture(count: 2) {
+                        todoWebViewModel.resetToInitialPage()
+                    }
+                    Spacer()
+                    Button(action: {
+                        selectedTab = 1
+                    }) {
+                        Image(systemName: "house.fill")
+                            .resizable()
+                            .scaledToFit()
+                            .frame(width: 12.5, height: 12.5)
+                            .padding(8)
+                            .background(Circle().fill(Color.white.opacity(0.9)))
+                            .overlay(
+                                Circle().stroke(selectedTab == 1 ? Color.gray.opacity(0.3) : Color.clear, lineWidth: 2)
+                            )
+                            .shadow(radius: 4)
+                    }
+                    .onTapGesture(count: 2) {
+                        mainWebViewModel.resetToInitialPage()
+                    }
+                    .onTapGesture(count: 3) {
+                        showSettings.toggle()
+                    }
+                    Spacer()
+                    Button(action: {
+                        selectedTab = 2
+                    }) {
+                        Image(systemName: "calendar")
+                            .resizable()
+                            .scaledToFit()
+                            .frame(width: 12.5, height: 12.5)
+                            .padding(8)
+                            .background(Circle().fill(Color.white.opacity(0.9)))
+                            .overlay(
+                                Circle().stroke(selectedTab == 2 ? Color.gray.opacity(0.3) : Color.clear, lineWidth: 2)
+                            )
+                            .shadow(radius: 4)
+                    }
+                    .onTapGesture(count: 2) {
+                        currentDate = getCurrentDate()
+                        let dateUrl = URL(string: "https://scrapbox.io/\(projectName)/\(currentDate)")!
+                        dateWebViewModel.loadURL(dateUrl)
+                    }
+                    Spacer()
                 }
             }
-            .padding(.bottom, 30)
+            .padding(.bottom, 8)
         }
         .onAppear {
             projectName = UserDefaults.standard.string(forKey: UserDefaultsKeys.projectName) ?? ""
