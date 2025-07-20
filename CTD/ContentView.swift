@@ -139,7 +139,10 @@ struct ContentView: View {
                     dateWebViewModel.loadURL(dateUrl)
                 }
             }
-            .padding(.bottom, 30)
+            .padding()
+            .background(Color.white.opacity(0.9))
+            .clipShape(Capsule())
+            .shadow(radius: 4)
         }
         .onAppear {
             projectName = UserDefaults.standard.string(forKey: UserDefaultsKeys.projectName) ?? ""
