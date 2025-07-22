@@ -4,6 +4,7 @@ import WebKit
 struct UserDefaultsKeys {
     static let projectName = "ProjectName"
 }
+let sharedDefaults = UserDefaults(suiteName: "group.logsense")!
 
 class WebViewModel: ObservableObject {
     @Published var webView: CustomWebView?
@@ -51,19 +52,19 @@ class WebViewModel: ObservableObject {
 }
 
 struct ContentView: View {
-    @State private var projectName: String = UserDefaults.standard.string(forKey: UserDefaultsKeys.projectName) ?? ""
+    @State private var projectName: String = sharedDefaults.string(forKey: UserDefaultsKeys.projectName) ?? ""
     @State private var showSettings: Bool = false
     @State private var selectedTab = 1
     @State private var currentDate = ""
 
     @StateObject private var mainWebViewModel = WebViewModel(
-        url: URL(string: "https://scrapbox.io/\(UserDefaults.standard.string(forKey: UserDefaultsKeys.projectName) ?? "")")!
+        url: URL(string: "https://scrapbox.io/\(sharedDefaults.string(forKey: UserDefaultsKeys.projectName) ?? "")")!
     )
     @StateObject private var todoWebViewModel = WebViewModel(
-        url: URL(string: "https://scrapbox.io/\(UserDefaults.standard.string(forKey: UserDefaultsKeys.projectName) ?? "")/ToDo")!
+        url: URL(string: "https://scrapbox.io/\(sharedDefaults.string(forKey: UserDefaultsKeys.projectName) ?? "")/ToDo")!
     )
     @StateObject private var dateWebViewModel = WebViewModel(
-        url: URL(string: "https://scrapbox.io/\(UserDefaults.standard.string(forKey: UserDefaultsKeys.projectName) ?? "")")!
+        url: URL(string: "https://scrapbox.io/\(sharedDefaults.string(forKey: UserDefaultsKeys.projectName) ?? "")")!
     )
 
     var body: some View {
@@ -158,13 +159,16 @@ struct ContentView: View {
             .padding(.bottom, 8)
         }
         .onAppear {
-            projectName = UserDefaults.standard.string(forKey: UserDefaultsKeys.projectName) ?? ""
+            projectName = sharedDefaults.string(forKey: UserDefaultsKeys.projectName) ?? ""
             currentDate = getCurrentDate()
             let dateUrl = URL(string: "https://scrapbox.io/\(projectName)/\(currentDate)")!
             dateWebViewModel.loadURL(dateUrl)
         }
         .sheet(isPresented: $showSettings, onDismiss: applyProjectName) {
             SettingsView(projectName: $projectName)
+        }
+        .onOpenURL { url in
+            handleIncomingURL(url)
         }
     }
 
@@ -185,6 +189,21 @@ struct ContentView: View {
         let dateFormatter = DateFormatter()
         dateFormatter.dateFormat = "yyyy-MM-dd"
         return dateFormatter.string(from: Date())
+    }
+
+    private func handleIncomingURL(_ url: URL) {
+        // Expect: logsense://open?scrapboxUrl=&lt;percentEncodedURL&gt;
+        guard url.scheme == "logsense", url.host == "open" else { return }
+
+        let components = URLComponents(url: url, resolvingAgainstBaseURL: false)
+        let scrapParam = components?.queryItems?.first(where: { $0.name == "scrapboxUrl" })?.value
+
+        guard let encoded = scrapParam,
+              let targetURL = URL(string: encoded) else { return }
+
+        // Switch to main tab and load the page
+        selectedTab = 1
+        mainWebViewModel.loadURL(targetURL)
     }
 }
 
@@ -249,7 +268,7 @@ class CustomWebView: WKWebView, WKNavigationDelegate {
 
     // 「Today」ボタンのトリプルタップで今年("YYYY年")のページを開く
     @objc func openYearPage() {
-        let project = UserDefaults.standard.string(forKey: UserDefaultsKeys.projectName) ?? ""
+        let project = sharedDefaults.string(forKey: UserDefaultsKeys.projectName) ?? ""
         let year = Calendar.current.component(.year, from: Date())
         // 「YYYY年」の形式にしてページを開く
         let yearString = "\(year)年"
@@ -358,7 +377,7 @@ struct SettingsView: View {
                 }
             }
             .navigationBarItems(trailing: Button("保存") {
-                UserDefaults.standard.set(projectName, forKey: UserDefaultsKeys.projectName)
+                sharedDefaults.set(projectName, forKey: UserDefaultsKeys.projectName)
                 presentationMode.wrappedValue.dismiss()
             })
         }
