@@ -145,6 +145,13 @@ struct ContentView: View {
                         let dateUrl = URL(string: "https://scrapbox.io/\(projectName)/\(currentDate)")!
                         dateWebViewModel.loadURL(dateUrl)
                     }
+                    .onTapGesture(count: 3) {
+                        let year = Calendar.current.component(.year, from: Date())
+                        let yearString = "\(year)年"
+                        if let url = URL(string: "https://scrapbox.io/\(projectName)/\(yearString)") {
+                            dateWebViewModel.loadURL(url)
+                        }
+                    }
                     Spacer()
                 }
             }
@@ -212,18 +219,11 @@ class CustomWebView: WKWebView, WKNavigationDelegate {
         let dateButton = UIButton(type: .system)
         dateButton.setTitle("Today", for: .normal)
 
-        // シングルタップで日付を挿入、トリプルタップで「YYYY年」のページを開く
+        // シングルタップで日付を挿入
         let singleTap = UITapGestureRecognizer(target: self, action: #selector(insertDate))
         singleTap.numberOfTapsRequired = 1
 
-        let tripleTap = UITapGestureRecognizer(target: self, action: #selector(openYearPage))
-        tripleTap.numberOfTapsRequired = 3
-
-        // トリプルタップが優先されるようにシングルタップに依存させる
-        singleTap.require(toFail: tripleTap)
-
         dateButton.addGestureRecognizer(singleTap)
-        dateButton.addGestureRecognizer(tripleTap)
 
         let dismissButton = UIButton(type: .system)
         dismissButton.setTitle("Done", for: .normal)
