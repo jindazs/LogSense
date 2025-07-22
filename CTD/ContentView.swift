@@ -211,7 +211,19 @@ class CustomWebView: WKWebView, WKNavigationDelegate {
 
         let dateButton = UIButton(type: .system)
         dateButton.setTitle("Today", for: .normal)
-        dateButton.addTarget(self, action: #selector(insertDate), for: .touchUpInside)
+
+        // シングルタップで日付を挿入、トリプルタップで「YYYY年」のページを開く
+        let singleTap = UITapGestureRecognizer(target: self, action: #selector(insertDate))
+        singleTap.numberOfTapsRequired = 1
+
+        let tripleTap = UITapGestureRecognizer(target: self, action: #selector(openYearPage))
+        tripleTap.numberOfTapsRequired = 3
+
+        // トリプルタップが優先されるようにシングルタップに依存させる
+        singleTap.require(toFail: tripleTap)
+
+        dateButton.addGestureRecognizer(singleTap)
+        dateButton.addGestureRecognizer(tripleTap)
 
         let dismissButton = UIButton(type: .system)
         dismissButton.setTitle("Done", for: .normal)
@@ -233,6 +245,18 @@ class CustomWebView: WKWebView, WKNavigationDelegate {
         // テキストエリアに直接文字を注入
         let script = "document.execCommand('insertText', false, '\(dateString)');"
         self.evaluateJavaScript(script, completionHandler: nil)
+    }
+
+    // 「Today」ボタンのトリプルタップで今年("YYYY年")のページを開く
+    @objc func openYearPage() {
+        let project = UserDefaults.standard.string(forKey: UserDefaultsKeys.projectName) ?? ""
+        let year = Calendar.current.component(.year, from: Date())
+        // 「YYYY年」の形式にしてページを開く
+        let yearString = "\(year)年"
+        if let url = URL(string: "https://scrapbox.io/\(project)/\(yearString)") {
+            let request = URLRequest(url: url)
+            self.load(request)
+        }
     }
 
     // 「Done」ボタンでキーボードを閉じる
