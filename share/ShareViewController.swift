@@ -112,9 +112,19 @@ final class ShareViewController: UIViewController {
     }
 
     private func makeScrapboxURL(project: String, title: String, link: URL) -> String {
-        // Scrapboxのパス部分はURLパス用エンコード
-        let encTitle = title.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? title
-        let body = "[\(title) \(link.absoluteString)]"
+        // Scrapboxのパス部分 & URL 部分ともにスラッシュを含めて厳密にエンコードする
+        let strictAllowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-._~"))
+
+        // title がURLでもスラッシュが残らないよう同じルールでエンコード
+        let encTitle = title.addingPercentEncoding(withAllowedCharacters: strictAllowed) ?? title
+
+        // link は既に URL 型なので absoluteString を同じルールで
+        let encLink = link.absoluteString.addingPercentEncoding(withAllowedCharacters: strictAllowed) ?? link.absoluteString
+
+        print("[ShareExt] encTitle=\(encTitle)")
+        print("[ShareExt] encLink=\(encLink)")
+
+        let body = "[\(title) \(encLink)]"
         let encBody = body.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? body
         return "https://scrapbox.io/\(project)/\(encTitle)?body=\(encBody)"
     }
