@@ -2,6 +2,19 @@ import UIKit
 import UniformTypeIdentifiers
 import ImageIO
 
+private let appGroupID = "group.logsense"
+
+/// Returns the UserDefaults for the App Group if the container exists.
+/// Falls back to `.standard` when unavailable to avoid runtime warnings.
+private func groupDefaults() -> UserDefaults {
+    if FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroupID) != nil,
+       let defaults = UserDefaults(suiteName: appGroupID) {
+        return defaults
+    }
+    print("[ShareExt] App Group container missing; using UserDefaults.standard")
+    return .standard
+}
+
 final class ShareViewController: UIViewController {
 
     override func viewDidAppear(_ animated: Bool) {
@@ -22,10 +35,7 @@ final class ShareViewController: UIViewController {
 
         extractPageInfo(from: item) { title, url in
             // App Group から取得。取得できない場合は標準の UserDefaults を使用
-            let defaults = UserDefaults(suiteName: "group.logsense") ?? .standard
-            if defaults === .standard {
-                print("[ShareExt] App Group defaults unavailable; using .standard. Check entitlements.")
-            }
+            let defaults = groupDefaults()
             let projectName = defaults.string(forKey: "ProjectName") ?? "YOUR_PROJECT"
             print("[ShareExt] projectName = \(projectName)")
             print("[ShareExt] received title = \(title)")
@@ -82,10 +92,7 @@ final class ShareViewController: UIViewController {
                     return
                 }
 
-                let defaults = UserDefaults(suiteName: "group.logsense") ?? .standard
-                if defaults === .standard {
-                    print("[ShareExt] App Group defaults unavailable when handling image")
-                }
+                let defaults = groupDefaults()
 
                 let projectName = defaults.string(forKey: "ProjectName") ?? "YOUR_PROJECT"
                 let token = defaults.string(forKey: "GyazoToken") ?? ""

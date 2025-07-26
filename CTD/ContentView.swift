@@ -5,9 +5,21 @@ struct UserDefaultsKeys {
     static let projectName = "ProjectName"
     static let gyazoToken = "GyazoToken"
 }
-/// App Group defaults may be nil on misconfigured builds. Fallback to `.standard` so
-/// the app still launches instead of crashing.
-let sharedDefaults = UserDefaults(suiteName: "group.logsense") ?? .standard
+let appGroupID = "group.logsense"
+
+/// Returns the shared UserDefaults stored in the App Group if available.
+/// Falls back to `.standard` and prints a warning when the group container is
+/// missing so the app can still launch without crashing.
+func sharedDefaults() -> UserDefaults {
+    if FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroupID) != nil,
+       let defaults = UserDefaults(suiteName: appGroupID) {
+        return defaults
+    }
+    print("[LogSense] App Group container missing; using UserDefaults.standard")
+    return .standard
+}
+
+let groupDefaults = sharedDefaults()
 
 class WebViewModel: ObservableObject {
     @Published var webView: CustomWebView?
@@ -55,20 +67,20 @@ class WebViewModel: ObservableObject {
 }
 
 struct ContentView: View {
-    @State private var projectName: String = sharedDefaults.string(forKey: UserDefaultsKeys.projectName) ?? ""
-    @State private var gyazoToken: String = sharedDefaults.string(forKey: UserDefaultsKeys.gyazoToken) ?? ""
+    @State private var projectName: String = groupDefaults.string(forKey: UserDefaultsKeys.projectName) ?? ""
+    @State private var gyazoToken: String = groupDefaults.string(forKey: UserDefaultsKeys.gyazoToken) ?? ""
     @State private var showSettings: Bool = false
     @State private var selectedTab = 1
     @State private var currentDate = ""
 
     @StateObject private var mainWebViewModel = WebViewModel(
-        url: URL(string: "https://scrapbox.io/\(sharedDefaults.string(forKey: UserDefaultsKeys.projectName) ?? "")")!
+        url: URL(string: "https://scrapbox.io/\(groupDefaults.string(forKey: UserDefaultsKeys.projectName) ?? "")")!
     )
     @StateObject private var todoWebViewModel = WebViewModel(
-        url: URL(string: "https://scrapbox.io/\(sharedDefaults.string(forKey: UserDefaultsKeys.projectName) ?? "")/ToDo")!
+        url: URL(string: "https://scrapbox.io/\(groupDefaults.string(forKey: UserDefaultsKeys.projectName) ?? "")/ToDo")!
     )
     @StateObject private var dateWebViewModel = WebViewModel(
-        url: URL(string: "https://scrapbox.io/\(sharedDefaults.string(forKey: UserDefaultsKeys.projectName) ?? "")")!
+        url: URL(string: "https://scrapbox.io/\(groupDefaults.string(forKey: UserDefaultsKeys.projectName) ?? "")")!
     )
 
     var body: some View {
@@ -163,7 +175,7 @@ struct ContentView: View {
             .padding(.bottom, 8)
         }
         .onAppear {
-            projectName = sharedDefaults.string(forKey: UserDefaultsKeys.projectName) ?? ""
+            projectName = groupDefaults.string(forKey: UserDefaultsKeys.projectName) ?? ""
             currentDate = getCurrentDate()
             let dateUrl = URL(string: "https://scrapbox.io/\(projectName)/\(currentDate)")!
             dateWebViewModel.loadURL(dateUrl)
@@ -272,7 +284,7 @@ class CustomWebView: WKWebView, WKNavigationDelegate {
 
     // 「Today」ボタンのトリプルタップで今年("YYYY年")のページを開く
     @objc func openYearPage() {
-        let project = sharedDefaults.string(forKey: UserDefaultsKeys.projectName) ?? ""
+        let project = groupDefaults.string(forKey: UserDefaultsKeys.projectName) ?? ""
         let year = Calendar.current.component(.year, from: Date())
         // 「YYYY年」の形式にしてページを開く
         let yearString = "\(year)年"
@@ -385,8 +397,8 @@ struct SettingsView: View {
                 }
             }
             .navigationBarItems(trailing: Button("保存") {
-                sharedDefaults.set(projectName, forKey: UserDefaultsKeys.projectName)
-                sharedDefaults.set(gyazoToken, forKey: UserDefaultsKeys.gyazoToken)
+                groupDefaults.set(projectName, forKey: UserDefaultsKeys.projectName)
+                groupDefaults.set(gyazoToken, forKey: UserDefaultsKeys.gyazoToken)
                 presentationMode.wrappedValue.dismiss()
             })
         }
