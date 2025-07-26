@@ -98,6 +98,7 @@ final class ShareViewController: UIViewController {
 
                 print("[ShareExt] got raw image data size=\(data.count) bytes")
 
+
                 let defaults = groupDefaults()
 
                 let projectName = defaults.string(forKey: "ProjectName") ?? "YOUR_PROJECT"
@@ -120,6 +121,7 @@ final class ShareViewController: UIViewController {
                 }
 
                 self.uploadImage(data: uploadData, token: token) { urlString in
+
                     DispatchQueue.main.async {
                         guard let urlString = urlString else {
                             self.extensionContext?.completeRequest(returningItems: nil)
@@ -177,6 +179,7 @@ final class ShareViewController: UIViewController {
         }
 
         print("[ShareExt] no exif date found")
+
         return nil
     }
 
