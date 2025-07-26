@@ -21,11 +21,10 @@ final class ShareViewController: UIViewController {
         }
 
         extractPageInfo(from: item) { title, url in
-            // App Group から取得（なければ固定名にフォールバック）
-            guard let defaults = UserDefaults(suiteName: "group.logsense") else {
-                print("[ShareExt] App Group defaults is nil. Check entitlements/group ID.")
-                self.extensionContext?.completeRequest(returningItems: nil)
-                return
+            // App Group から取得。取得できない場合は標準の UserDefaults を使用
+            let defaults = UserDefaults(suiteName: "group.logsense") ?? .standard
+            if defaults === .standard {
+                print("[ShareExt] App Group defaults unavailable; using .standard. Check entitlements.")
             }
             let projectName = defaults.string(forKey: "ProjectName") ?? "YOUR_PROJECT"
             print("[ShareExt] projectName = \(projectName)")
@@ -83,9 +82,9 @@ final class ShareViewController: UIViewController {
                     return
                 }
 
-                guard let defaults = UserDefaults(suiteName: "group.logsense") else {
-                    self.extensionContext?.completeRequest(returningItems: nil)
-                    return
+                let defaults = UserDefaults(suiteName: "group.logsense") ?? .standard
+                if defaults === .standard {
+                    print("[ShareExt] App Group defaults unavailable when handling image")
                 }
 
                 let projectName = defaults.string(forKey: "ProjectName") ?? "YOUR_PROJECT"

@@ -5,7 +5,9 @@ struct UserDefaultsKeys {
     static let projectName = "ProjectName"
     static let gyazoToken = "GyazoToken"
 }
-let sharedDefaults = UserDefaults(suiteName: "group.logsense")!
+/// App Group defaults may be nil on misconfigured builds. Fallback to `.standard` so
+/// the app still launches instead of crashing.
+let sharedDefaults = UserDefaults(suiteName: "group.logsense") ?? .standard
 
 class WebViewModel: ObservableObject {
     @Published var webView: CustomWebView?
