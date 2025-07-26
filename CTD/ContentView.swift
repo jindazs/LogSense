@@ -3,8 +3,23 @@ import WebKit
 
 struct UserDefaultsKeys {
     static let projectName = "ProjectName"
+    static let gyazoToken = "GyazoToken"
 }
-let sharedDefaults = UserDefaults(suiteName: "group.logsense")!
+let appGroupID = "group.logsense"
+
+/// Returns the shared UserDefaults stored in the App Group if available.
+/// Falls back to `.standard` and prints a warning when the group container is
+/// missing so the app can still launch without crashing.
+func sharedDefaults() -> UserDefaults {
+    if FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroupID) != nil,
+       let defaults = UserDefaults(suiteName: appGroupID) {
+        return defaults
+    }
+    print("[LogSense] App Group container missing; using UserDefaults.standard")
+    return .standard
+}
+
+let groupDefaults = sharedDefaults()
 
 class WebViewModel: ObservableObject {
     @Published var webView: CustomWebView?
@@ -52,19 +67,20 @@ class WebViewModel: ObservableObject {
 }
 
 struct ContentView: View {
-    @State private var projectName: String = sharedDefaults.string(forKey: UserDefaultsKeys.projectName) ?? ""
+    @State private var projectName: String = groupDefaults.string(forKey: UserDefaultsKeys.projectName) ?? ""
+    @State private var gyazoToken: String = groupDefaults.string(forKey: UserDefaultsKeys.gyazoToken) ?? ""
     @State private var showSettings: Bool = false
     @State private var selectedTab = 1
     @State private var currentDate = ""
 
     @StateObject private var mainWebViewModel = WebViewModel(
-        url: URL(string: "https://scrapbox.io/\(sharedDefaults.string(forKey: UserDefaultsKeys.projectName) ?? "")")!
+        url: URL(string: "https://scrapbox.io/\(groupDefaults.string(forKey: UserDefaultsKeys.projectName) ?? "")")!
     )
     @StateObject private var todoWebViewModel = WebViewModel(
-        url: URL(string: "https://scrapbox.io/\(sharedDefaults.string(forKey: UserDefaultsKeys.projectName) ?? "")/ToDo")!
+        url: URL(string: "https://scrapbox.io/\(groupDefaults.string(forKey: UserDefaultsKeys.projectName) ?? "")/ToDo")!
     )
     @StateObject private var dateWebViewModel = WebViewModel(
-        url: URL(string: "https://scrapbox.io/\(sharedDefaults.string(forKey: UserDefaultsKeys.projectName) ?? "")")!
+        url: URL(string: "https://scrapbox.io/\(groupDefaults.string(forKey: UserDefaultsKeys.projectName) ?? "")")!
     )
 
     var body: some View {
@@ -159,13 +175,13 @@ struct ContentView: View {
             .padding(.bottom, 8)
         }
         .onAppear {
-            projectName = sharedDefaults.string(forKey: UserDefaultsKeys.projectName) ?? ""
+            projectName = groupDefaults.string(forKey: UserDefaultsKeys.projectName) ?? ""
             currentDate = getCurrentDate()
             let dateUrl = URL(string: "https://scrapbox.io/\(projectName)/\(currentDate)")!
             dateWebViewModel.loadURL(dateUrl)
         }
         .sheet(isPresented: $showSettings, onDismiss: applyProjectName) {
-            SettingsView(projectName: $projectName)
+            SettingsView(projectName: $projectName, gyazoToken: $gyazoToken)
         }
         .onOpenURL { url in
             handleIncomingURL(url)
@@ -193,17 +209,24 @@ struct ContentView: View {
 
     private func handleIncomingURL(_ url: URL) {
         // Expect: logsense://open?scrapboxUrl=&lt;percentEncodedURL&gt;
-        guard url.scheme == "logsense", url.host == "open" else { return }
+        print("[LogSense] handleIncomingURL \(url.absoluteString)")
+        guard url.scheme == "logsense", url.host == "open" else {
+            print("[LogSense] invalid scheme or host")
+            return
+        }
 
         let components = URLComponents(url: url, resolvingAgainstBaseURL: false)
         let scrapParam = components?.queryItems?.first(where: { $0.name == "scrapboxUrl" })?.value
+        print("[LogSense] scrapParam=\(scrapParam ?? "nil")")
 
         guard let encoded = scrapParam,
               let targetURL = URL(string: encoded) else { return }
+        print("[LogSense] targetURL = \(targetURL)")
 
         // Switch to main tab and load the page
         selectedTab = 1
         mainWebViewModel.loadURL(targetURL)
+        print("[LogSense] loaded URL in main web view")
     }
 }
 
@@ -268,7 +291,7 @@ class CustomWebView: WKWebView, WKNavigationDelegate {
 
     // 「Today」ボタンのトリプルタップで今年("YYYY年")のページを開く
     @objc func openYearPage() {
-        let project = sharedDefaults.string(forKey: UserDefaultsKeys.projectName) ?? ""
+        let project = groupDefaults.string(forKey: UserDefaultsKeys.projectName) ?? ""
         let year = Calendar.current.component(.year, from: Date())
         // 「YYYY年」の形式にしてページを開く
         let yearString = "\(year)年"
@@ -367,6 +390,7 @@ struct WebViewWrapper: UIViewRepresentable {
 
 struct SettingsView: View {
     @Binding var projectName: String
+    @Binding var gyazoToken: String
     @Environment(\.presentationMode) var presentationMode
 
     var body: some View {
@@ -375,9 +399,13 @@ struct SettingsView: View {
                 Section(header: Text("プロジェクト名")) {
                     TextField("プロジェクト名", text: $projectName)
                 }
+                Section(header: Text("Gyazo Token")) {
+                    SecureField("access token", text: $gyazoToken)
+                }
             }
             .navigationBarItems(trailing: Button("保存") {
-                sharedDefaults.set(projectName, forKey: UserDefaultsKeys.projectName)
+                groupDefaults.set(projectName, forKey: UserDefaultsKeys.projectName)
+                groupDefaults.set(gyazoToken, forKey: UserDefaultsKeys.gyazoToken)
                 presentationMode.wrappedValue.dismiss()
             })
         }
