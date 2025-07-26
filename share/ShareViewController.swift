@@ -87,17 +87,17 @@ final class ShareViewController: UIViewController {
     }
 
     private func handleImage(provider: NSItemProvider) {
-        provider.loadObject(ofClass: UIImage.self) { image, error in
+        provider.loadDataRepresentation(forTypeIdentifier: UTType.image.identifier) { data, error in
             DispatchQueue.main.async {
-                print("[ShareExt] load image result error=\(String(describing: error))")
-                guard let uiImage = image as? UIImage,
-                      let data = uiImage.jpegData(compressionQuality: 0.9) else {
-                    print("[ShareExt] failed to convert provider to JPEG")
+                print("[ShareExt] load data error=\(String(describing: error))")
+                guard let data = data else {
+                    print("[ShareExt] failed to load image data")
                     self.extensionContext?.completeRequest(returningItems: nil)
                     return
                 }
 
-                print("[ShareExt] got JPEG data size=\(data.count) bytes")
+                print("[ShareExt] got raw image data size=\(data.count) bytes")
+
 
                 let defaults = groupDefaults()
 
@@ -111,7 +111,17 @@ final class ShareViewController: UIViewController {
 
                 let date = self.exifDate(from: data) ?? self.currentDate()
 
-                self.uploadImage(data: data, token: token) { urlString in
+                let uploadData: Data
+                if let jpg = UIImage(data: data)?.jpegData(compressionQuality: 0.9) {
+                    print("[ShareExt] converted image to JPEG size=\(jpg.count)")
+                    uploadData = jpg
+                } else {
+                    print("[ShareExt] using original data for upload")
+                    uploadData = data
+                }
+
+                self.uploadImage(data: uploadData, token: token) { urlString in
+
                     DispatchQueue.main.async {
                         guard let urlString = urlString else {
                             self.extensionContext?.completeRequest(returningItems: nil)
@@ -145,16 +155,31 @@ final class ShareViewController: UIViewController {
     private func exifDate(from data: Data) -> String? {
         guard let source = CGImageSourceCreateWithData(data as CFData, nil),
               let props = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any] else {
+            print("[ShareExt] no CGImageSource properties")
             return nil
         }
-        if let exif = props[kCGImagePropertyExifDictionary] as? [CFString: Any],
-           let dateStr = exif[kCGImagePropertyExifDateTimeOriginal] as? String ?? exif[kCGImagePropertyExifDateTimeDigitized] as? String {
-            return String(dateStr.prefix(10)).replacingOccurrences(of: ":", with: "-")
+
+        if let exif = props[kCGImagePropertyExifDictionary] as? [CFString: Any] {
+            print("[ShareExt] EXIF dict = \(exif)")
+            if let dateStr = exif[kCGImagePropertyExifDateTimeOriginal] as? String ??
+                exif[kCGImagePropertyExifDateTimeDigitized] as? String {
+                let result = String(dateStr.prefix(10)).replacingOccurrences(of: ":", with: "-")
+                print("[ShareExt] exif date = \(result)")
+                return result
+            }
         }
-        if let tiff = props[kCGImagePropertyTIFFDictionary] as? [CFString: Any],
-           let dateStr = tiff[kCGImagePropertyTIFFDateTime] as? String {
-            return String(dateStr.prefix(10)).replacingOccurrences(of: ":", with: "-")
+
+        if let tiff = props[kCGImagePropertyTIFFDictionary] as? [CFString: Any] {
+            print("[ShareExt] TIFF dict = \(tiff)")
+            if let dateStr = tiff[kCGImagePropertyTIFFDateTime] as? String {
+                let result = String(dateStr.prefix(10)).replacingOccurrences(of: ":", with: "-")
+                print("[ShareExt] tiff date = \(result)")
+                return result
+            }
         }
+
+        print("[ShareExt] no exif date found")
+
         return nil
     }
 
