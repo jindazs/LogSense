@@ -223,10 +223,10 @@ struct ContentView: View {
               let targetURL = URL(string: encoded) else { return }
         print("[LogSense] targetURL = \(targetURL)")
 
-        // Switch to ToDo tab and load the page
-        selectedTab = 0
-        todoWebViewModel.loadURL(targetURL)
-        print("[LogSense] loaded URL in todo web view")
+        // Switch to main tab and load the page
+        selectedTab = 1
+        mainWebViewModel.loadURL(targetURL)
+        print("[LogSense] loaded URL in main web view")
     }
 }
 
