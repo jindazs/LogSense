@@ -75,9 +75,10 @@ final class ShareViewController: UIViewController {
     }
 
     private func handleImage(provider: NSItemProvider) {
-        provider.loadDataRepresentation(forTypeIdentifier: UTType.image.identifier) { data, error in
+        provider.loadObject(ofClass: UIImage.self) { image, error in
             DispatchQueue.main.async {
-                guard let data = data else {
+                guard let uiImage = image as? UIImage,
+                      let data = uiImage.jpegData(compressionQuality: 0.9) else {
                     self.extensionContext?.completeRequest(returningItems: nil)
                     return
                 }
