@@ -209,17 +209,24 @@ struct ContentView: View {
 
     private func handleIncomingURL(_ url: URL) {
         // Expect: logsense://open?scrapboxUrl=&lt;percentEncodedURL&gt;
-        guard url.scheme == "logsense", url.host == "open" else { return }
+        print("[LogSense] handleIncomingURL \(url.absoluteString)")
+        guard url.scheme == "logsense", url.host == "open" else {
+            print("[LogSense] invalid scheme or host")
+            return
+        }
 
         let components = URLComponents(url: url, resolvingAgainstBaseURL: false)
         let scrapParam = components?.queryItems?.first(where: { $0.name == "scrapboxUrl" })?.value
+        print("[LogSense] scrapParam=\(scrapParam ?? "nil")")
 
         guard let encoded = scrapParam,
               let targetURL = URL(string: encoded) else { return }
+        print("[LogSense] targetURL = \(targetURL)")
 
         // Switch to main tab and load the page
         selectedTab = 1
         mainWebViewModel.loadURL(targetURL)
+        print("[LogSense] loaded URL in main web view")
     }
 }
 

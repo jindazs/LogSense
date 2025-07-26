@@ -17,21 +17,32 @@ private func groupDefaults() -> UserDefaults {
 
 final class ShareViewController: UIViewController {
 
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        print("[ShareExt] viewDidLoad")
+    }
+
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
+        print("[ShareExt] viewDidAppear")
         handleShare()
     }
 
     private func handleShare() {
+        print("[ShareExt] handleShare start")
         guard let item = extensionContext?.inputItems.first as? NSExtensionItem else {
+            print("[ShareExt] No input item")
             extensionContext?.completeRequest(returningItems: nil)
             return
         }
         // まず画像共有か確認
         if let provider = item.attachments?.first(where: { $0.hasItemConformingToTypeIdentifier(UTType.image.identifier) }) {
+            print("[ShareExt] found image attachment")
             handleImage(provider: provider)
             return
         }
+
+        print("[ShareExt] no image attachment, try extracting page info")
 
         extractPageInfo(from: item) { title, url in
             // App Group から取得。取得できない場合は標準の UserDefaults を使用
@@ -70,6 +81,7 @@ final class ShareViewController: UIViewController {
                 print("[ShareExt] extensionContext is nil")
                 return
             }
+            print("[ShareExt] opening main app via context.open")
 
             // 先に開いてから completeRequest の順で試す
             context.open(callback) { success in
@@ -86,16 +98,21 @@ final class ShareViewController: UIViewController {
     private func handleImage(provider: NSItemProvider) {
         provider.loadObject(ofClass: UIImage.self) { image, error in
             DispatchQueue.main.async {
+                print("[ShareExt] load image result error=\(String(describing: error))")
                 guard let uiImage = image as? UIImage,
                       let data = uiImage.jpegData(compressionQuality: 0.9) else {
+                    print("[ShareExt] failed to convert provider to JPEG")
                     self.extensionContext?.completeRequest(returningItems: nil)
                     return
                 }
+
+                print("[ShareExt] got JPEG data size=\(data.count) bytes")
 
                 let defaults = groupDefaults()
 
                 let projectName = defaults.string(forKey: "ProjectName") ?? "YOUR_PROJECT"
                 let token = defaults.string(forKey: "GyazoToken") ?? ""
+                print("[ShareExt] project=\(projectName) token.isEmpty=\(token.isEmpty)")
                 guard !token.isEmpty else {
                     self.extensionContext?.completeRequest(returningItems: nil)
                     return
@@ -176,12 +193,17 @@ final class ShareViewController: UIViewController {
         req.httpBody = body
 
         URLSession.shared.dataTask(with: req) { data, response, error in
+            if let error = error {
+                print("[ShareExt] upload error=\(error.localizedDescription)")
+            }
             guard let data = data,
                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                   let url = json["url"] as? String else {
+                print("[ShareExt] upload failed to parse response")
                 completion(nil)
                 return
             }
+            print("[ShareExt] upload success URL=\(url)")
             completion(url)
         }.resume()
     }
@@ -198,6 +220,7 @@ final class ShareViewController: UIViewController {
                                  completion: @escaping (String, URL) -> Void) {
 
         let providers = item.attachments ?? []
+        print("[ShareExt] extractPageInfo providers count=\(providers.count)")
         guard !providers.isEmpty else {
             extensionContext?.completeRequest(returningItems: nil)
             return
@@ -205,9 +228,12 @@ final class ShareViewController: UIViewController {
 
         // 1) URL を最優先で取得
         if let provider = providers.first(where: { $0.canLoadObject(ofClass: URL.self) }) {
+            print("[ShareExt] found URL provider")
             provider.loadObject(ofClass: URL.self) { (url, error) in
                 DispatchQueue.main.async {
+                    print("[ShareExt] load URL error=\(String(describing: error))")
                     guard let url = url else {
+                        print("[ShareExt] URL provider returned nil")
                         self.extensionContext?.completeRequest(returningItems: nil)
                         return
                     }
@@ -220,12 +246,15 @@ final class ShareViewController: UIViewController {
 
         // 2) テキストからURLを抽出
         if let provider = providers.first(where: { $0.canLoadObject(ofClass: String.self) }) {
+            print("[ShareExt] found String provider")
             provider.loadObject(ofClass: String.self) { (text, error) in
                 DispatchQueue.main.async {
+                    print("[ShareExt] load String error=\(String(describing: error))")
                     let rawText = text ?? ""
                     if let firstURL = URL(string: rawText) {
                         completion(rawText, firstURL)
                     } else {
+                        print("[ShareExt] String provider text did not contain URL")
                         self.extensionContext?.completeRequest(returningItems: nil)
                     }
                 }
@@ -234,6 +263,7 @@ final class ShareViewController: UIViewController {
         }
 
         // 3) どちらも取得できない場合は終了
+        print("[ShareExt] extractPageInfo no suitable provider")
         extensionContext?.completeRequest(returningItems: nil)
     }
 
@@ -257,6 +287,7 @@ final class ShareViewController: UIViewController {
 
     @discardableResult
     private func openViaResponderChain(_ url: URL) -> Bool {
+        print("[ShareExt] trying responder chain fallback")
         var responder: UIResponder? = self
         while let r = responder {
             if let app = r as? UIApplication {
