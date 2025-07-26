@@ -3,6 +3,7 @@ import WebKit
 
 struct UserDefaultsKeys {
     static let projectName = "ProjectName"
+    static let gyazoToken = "GyazoToken"
 }
 let sharedDefaults = UserDefaults(suiteName: "group.logsense")!
 
@@ -53,6 +54,7 @@ class WebViewModel: ObservableObject {
 
 struct ContentView: View {
     @State private var projectName: String = sharedDefaults.string(forKey: UserDefaultsKeys.projectName) ?? ""
+    @State private var gyazoToken: String = sharedDefaults.string(forKey: UserDefaultsKeys.gyazoToken) ?? ""
     @State private var showSettings: Bool = false
     @State private var selectedTab = 1
     @State private var currentDate = ""
@@ -165,7 +167,7 @@ struct ContentView: View {
             dateWebViewModel.loadURL(dateUrl)
         }
         .sheet(isPresented: $showSettings, onDismiss: applyProjectName) {
-            SettingsView(projectName: $projectName)
+            SettingsView(projectName: $projectName, gyazoToken: $gyazoToken)
         }
         .onOpenURL { url in
             handleIncomingURL(url)
@@ -367,6 +369,7 @@ struct WebViewWrapper: UIViewRepresentable {
 
 struct SettingsView: View {
     @Binding var projectName: String
+    @Binding var gyazoToken: String
     @Environment(\.presentationMode) var presentationMode
 
     var body: some View {
@@ -375,9 +378,13 @@ struct SettingsView: View {
                 Section(header: Text("プロジェクト名")) {
                     TextField("プロジェクト名", text: $projectName)
                 }
+                Section(header: Text("Gyazo Token")) {
+                    SecureField("access token", text: $gyazoToken)
+                }
             }
             .navigationBarItems(trailing: Button("保存") {
                 sharedDefaults.set(projectName, forKey: UserDefaultsKeys.projectName)
+                sharedDefaults.set(gyazoToken, forKey: UserDefaultsKeys.gyazoToken)
                 presentationMode.wrappedValue.dismiss()
             })
         }

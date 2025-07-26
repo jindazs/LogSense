@@ -1,0 +1,3 @@
+- XcodeでShare ExtensionのInfo.plistに `NSExtensionActivationSupportsImageWithMaxCount` を追加していることを確認
+- 本体アプリとShare ExtensionのApp Groupに `group.logsense` が設定されていることを確認
+- Releaseビルド時に必要に応じてGyazoのアクセストークンを入力しておく
