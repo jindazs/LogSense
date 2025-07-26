@@ -81,17 +81,8 @@ final class ShareViewController: UIViewController {
                 print("[ShareExt] extensionContext is nil")
                 return
             }
-            print("[ShareExt] opening main app via context.open")
-
-            // 先に開いてから completeRequest の順で試す
-            context.open(callback) { success in
-                print("[ShareExt] context.open success = \(success)")
-                if !success {
-                    _ = self.openViaResponderChain(callback)
-                }
-                // open の成否に関わらず完了させる
-                context.completeRequest(returningItems: nil)
-            }
+            print("[ShareExt] opening main app")
+            self.openCallback(callback, using: context)
         }
     }
 
@@ -139,7 +130,10 @@ final class ShareViewController: UIViewController {
                             return
                         }
 
-                        self.extensionContext?.open(callback) { _ in
+                        if let context = self.extensionContext {
+                            self.openCallback(callback, using: context)
+                        } else {
+                            _ = self.openViaResponderChain(callback)
                             self.extensionContext?.completeRequest(returningItems: nil)
                         }
                     }
@@ -283,6 +277,18 @@ final class ShareViewController: UIViewController {
         let body = "[\(title) \(encLink)]"
         let encBody = body.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? body
         return "https://scrapbox.io/\(project)/\(encTitle)?body=\(encBody)"
+    }
+
+    /// Attempts to open the main application with the given callback URL.
+    /// Uses `extensionContext.open` and falls back to the responder chain.
+    private func openCallback(_ url: URL, using context: NSExtensionContext) {
+        context.open(url) { success in
+            print("[ShareExt] context.open success = \(success)")
+            if !success {
+                _ = self.openViaResponderChain(url)
+            }
+            context.completeRequest(returningItems: nil)
+        }
     }
 
     @discardableResult
