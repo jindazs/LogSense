@@ -344,9 +344,9 @@ final class ShareViewController: UIViewController {
         print("[ShareExt] encTitle=\(encTitle)")
         print("[ShareExt] encLink=\(encLink)")
 
-        let body = "[\(title) \(encLink)]"
-        let encBody = body.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? body
-        return "https://scrapbox.io/\(project)/\(encTitle)?body=\(encBody)"
+        let body = "[\(title) \(link)]\n#inbox"
+        // let encBody = body.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? body
+        return "https://scrapbox.io/\(project)/\(encTitle)?body=\(body)"
     }
 
     /// Attempts to open the main application with the given callback URL.
