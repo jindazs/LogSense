@@ -110,6 +110,7 @@ final class ShareViewController: UIViewController {
                 }
 
                 let date = self.exifDate(from: data) ?? self.currentDate()
+                let (model, lens) = self.exifCameraInfo(from: data)
 
                 let uploadData: Data
                 if let jpg = UIImage(data: data)?.jpegData(compressionQuality: 0.9) {
@@ -128,7 +129,11 @@ final class ShareViewController: UIViewController {
                             return
                         }
 
-                        let scrapbox = self.makeScrapboxURLForImage(project: projectName, page: date, imageURL: urlString)
+                        let scrapbox = self.makeScrapboxURLForImage(project: projectName,
+                                                                    page: date,
+                                                                    imageURL: urlString,
+                                                                    camera: model,
+                                                                    lens: lens)
 
                         var comps = URLComponents()
                         comps.scheme = "logsense"
@@ -183,6 +188,28 @@ final class ShareViewController: UIViewController {
         return nil
     }
 
+    private func exifCameraInfo(from data: Data) -> (String?, String?) {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+              let props = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any] else {
+            print("[ShareExt] no CGImageSource properties for camera info")
+            return (nil, nil)
+        }
+
+        var model: String?
+        var lens: String?
+
+        if let tiff = props[kCGImagePropertyTIFFDictionary] as? [CFString: Any] {
+            model = tiff[kCGImagePropertyTIFFModel] as? String
+        }
+
+        if let exif = props[kCGImagePropertyExifDictionary] as? [CFString: Any] {
+            lens = exif[kCGImagePropertyExifLensModel] as? String
+        }
+
+        print("[ShareExt] camera model=\(model ?? "nil") lens=\(lens ?? "nil")")
+        return (model, lens)
+    }
+
     private func currentDate() -> String {
         let df = DateFormatter()
         df.dateFormat = "yyyy-MM-dd"
@@ -227,10 +254,28 @@ final class ShareViewController: UIViewController {
         }.resume()
     }
 
-    private func makeScrapboxURLForImage(project: String, page: String, imageURL: String) -> String {
+    private func makeScrapboxURLForImage(project: String,
+                                         page: String,
+                                         imageURL: String,
+                                         camera: String?,
+                                         lens: String?) -> String {
         let strictAllowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-._~"))
         let encTitle = page.addingPercentEncoding(withAllowedCharacters: strictAllowed) ?? page
-        let body = "[\(imageURL)]"
+
+        var body = "[\(imageURL)]"
+
+        let cam = camera?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let len = lens?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+
+        let parts: [String] = [
+            cam.isEmpty ? nil : "[\(cam)]",
+            len.isEmpty ? nil : "[\(len)]"
+        ].compactMap { $0 }
+
+        if !parts.isEmpty {
+            body += "\n" + parts.joined(separator: " + ")
+        }
+
         let encBody = body.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? body
         return "https://scrapbox.io/\(project)/\(encTitle)?body=\(encBody)"
     }
