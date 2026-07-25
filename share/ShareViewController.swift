@@ -15,7 +15,37 @@ private func groupDefaults() -> UserDefaults {
     return .standard
 }
 
+private enum GyazoUploadError: LocalizedError {
+    case requestPreparation
+    case network(Error)
+    case invalidResponse
+    case server(statusCode: Int, message: String?)
+    case invalidImageURL
+
+    var errorDescription: String? {
+        switch self {
+        case .requestPreparation:
+            return "画像アップロードの準備に失敗しました。"
+        case .network(let error):
+            return "Gyazoへ接続できませんでした。\(error.localizedDescription)"
+        case .invalidResponse:
+            return "Gyazoから不正な応答を受信しました。"
+        case .server(let statusCode, let message):
+            let detail = message.map { " \($0)" } ?? ""
+            return "Gyazoへのアップロードに失敗しました（HTTP \(statusCode)）。\(detail)"
+        case .invalidImageURL:
+            return "Gyazoの応答に有効な画像URLがありませんでした。"
+        }
+    }
+}
+
 final class ShareViewController: UIViewController {
+    private let imageProcessingQueue = DispatchQueue(
+        label: "LogSense.ShareExtension.ImageProcessing",
+        qos: .userInitiated
+    )
+    private var hasStartedHandlingShare = false
+    private var isShowingError = false
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -25,6 +55,8 @@ final class ShareViewController: UIViewController {
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
         print("[ShareExt] viewDidAppear")
+        guard !hasStartedHandlingShare else { return }
+        hasStartedHandlingShare = true
         handleShare()
     }
 
@@ -32,7 +64,7 @@ final class ShareViewController: UIViewController {
         print("[ShareExt] handleShare start")
         guard let item = extensionContext?.inputItems.first as? NSExtensionItem else {
             print("[ShareExt] No input item")
-            extensionContext?.completeRequest(returningItems: nil)
+            presentError("共有された内容を読み込めませんでした。")
             return
         }
         // まず画像共有か確認
@@ -47,7 +79,12 @@ final class ShareViewController: UIViewController {
         extractPageInfo(from: item) { title, url in
             // App Group から取得。取得できない場合は標準の UserDefaults を使用
             let defaults = groupDefaults()
-            let projectName = defaults.string(forKey: "ProjectName") ?? "YOUR_PROJECT"
+            let projectName = defaults.string(forKey: "ProjectName")?
+                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            guard !projectName.isEmpty else {
+                self.presentError("先にLogSenseの設定画面でプロジェクト名を設定してください。")
+                return
+            }
             print("[ShareExt] projectName = \(projectName)")
             print("[ShareExt] received title = \(title)")
             print("[ShareExt] received url = \(url.absoluteString)")
@@ -59,7 +96,7 @@ final class ShareViewController: UIViewController {
                 body: body
             ) else {
                 print("[ShareExt] Failed to build Scrapbox URL")
-                self.extensionContext?.completeRequest(returningItems: nil)
+                self.presentError("Scrapbox URLを作成できませんでした。")
                 return
             }
             print("[ShareExt] scrapboxURL (before encode) = \(scrapboxURL)")
@@ -74,7 +111,7 @@ final class ShareViewController: UIViewController {
 
             guard let callback = comps.url else {
                 print("[ShareExt] Failed to build callback URL via URLComponents")
-                self.extensionContext?.completeRequest(returningItems: nil)
+                self.presentError("LogSenseを開くためのURLを作成できませんでした。")
                 return
             }
 
@@ -88,6 +125,7 @@ final class ShareViewController: UIViewController {
 
             guard let context = self.extensionContext else {
                 print("[ShareExt] extensionContext is nil")
+                self.presentError("共有拡張を完了できませんでした。")
                 return
             }
             print("[ShareExt] opening main app")
@@ -96,79 +134,104 @@ final class ShareViewController: UIViewController {
     }
 
     private func handleImage(provider: NSItemProvider) {
-        provider.loadDataRepresentation(forTypeIdentifier: UTType.image.identifier) { data, error in
-            DispatchQueue.main.async {
-                print("[ShareExt] load data error=\(String(describing: error))")
-                guard let data = data else {
-                    print("[ShareExt] failed to load image data")
-                    self.extensionContext?.completeRequest(returningItems: nil)
-                    return
-                }
+        _ = provider.loadDataRepresentation(forTypeIdentifier: UTType.image.identifier) { [weak self] data, error in
+            guard let self else { return }
+            print("[ShareExt] load data error=\(String(describing: error))")
+            guard let data else {
+                print("[ShareExt] failed to load image data")
+                self.presentError("共有された画像を読み込めませんでした。")
+                return
+            }
 
-                print("[ShareExt] got raw image data size=\(data.count) bytes")
-
-
-                let defaults = groupDefaults()
-
-                let projectName = defaults.string(forKey: "ProjectName") ?? "YOUR_PROJECT"
-                let token = defaults.string(forKey: "GyazoToken") ?? ""
-                print("[ShareExt] project=\(projectName) token.isEmpty=\(token.isEmpty)")
-                guard !token.isEmpty else {
-                    self.extensionContext?.completeRequest(returningItems: nil)
-                    return
-                }
-
-                let date = self.exifDate(from: data) ?? self.currentDate()
-                let (model, lens) = self.exifCameraInfo(from: data)
-
-                let uploadData: Data
-                if let jpg = UIImage(data: data)?.jpegData(compressionQuality: 0.9) {
-                    print("[ShareExt] converted image to JPEG size=\(jpg.count)")
-                    uploadData = jpg
-                } else {
-                    print("[ShareExt] using original data for upload")
-                    uploadData = data
-                }
-
-                self.uploadImage(data: uploadData, token: token) { urlString in
-
-                    DispatchQueue.main.async {
-                        guard let urlString = urlString else {
-                            self.extensionContext?.completeRequest(returningItems: nil)
-                            return
-                        }
-
-                        guard let scrapbox = self.makeScrapboxURLForImage(
-                            project: projectName,
-                            page: date,
-                            imageURL: urlString,
-                            camera: model,
-                            lens: lens
-                        ) else {
-                            self.extensionContext?.completeRequest(returningItems: nil)
-                            return
-                        }
-
-                        var comps = URLComponents()
-                        comps.scheme = "logsense"
-                        comps.host = "open"
-                        comps.queryItems = [URLQueryItem(name: "scrapboxUrl", value: scrapbox.absoluteString)]
-
-                        guard let callback = comps.url else {
-                            self.extensionContext?.completeRequest(returningItems: nil)
-                            return
-                        }
-
-                        if let context = self.extensionContext {
-                            self.openCallback(callback, using: context)
-                        } else {
-                            _ = self.openViaResponderChain(callback)
-                            self.extensionContext?.completeRequest(returningItems: nil)
-                        }
-                    }
+            self.imageProcessingQueue.async {
+                autoreleasepool {
+                    self.processImage(data)
                 }
             }
         }
+    }
+
+    private func processImage(_ data: Data) {
+        print("[ShareExt] got raw image data size=\(data.count) bytes")
+        let defaults = groupDefaults()
+        let projectName = defaults.string(forKey: "ProjectName")?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !projectName.isEmpty else {
+            presentError("先にLogSenseの設定画面でプロジェクト名を設定してください。")
+            return
+        }
+
+        let token = GyazoTokenStore.load(migratingFrom: defaults)
+        print("[ShareExt] project=\(projectName) token.isEmpty=\(token.isEmpty)")
+        guard !token.isEmpty else {
+            presentError("先にLogSenseの設定画面でGyazo Tokenを設定してください。")
+            return
+        }
+
+        let date = exifDate(from: data) ?? currentDate()
+        let (model, lens) = exifCameraInfo(from: data)
+
+        let uploadData: Data
+        if let jpg = UIImage(data: data)?.jpegData(compressionQuality: 0.9) {
+            print("[ShareExt] converted image to JPEG size=\(jpg.count)")
+            uploadData = jpg
+        } else {
+            print("[ShareExt] using original data for upload")
+            uploadData = data
+        }
+
+        uploadImage(data: uploadData, token: token) { [weak self] result in
+            guard let self else { return }
+            switch result {
+            case .success(let urlString):
+                DispatchQueue.main.async {
+                    self.openUploadedImage(
+                        urlString: urlString,
+                        projectName: projectName,
+                        date: date,
+                        camera: model,
+                        lens: lens
+                    )
+                }
+            case .failure(let error):
+                self.presentError(error.localizedDescription)
+            }
+        }
+    }
+
+    private func openUploadedImage(
+        urlString: String,
+        projectName: String,
+        date: String,
+        camera: String?,
+        lens: String?
+    ) {
+        guard let scrapbox = makeScrapboxURLForImage(
+            project: projectName,
+            page: date,
+            imageURL: urlString,
+            camera: camera,
+            lens: lens
+        ) else {
+            presentError("Scrapbox URLを作成できませんでした。")
+            return
+        }
+
+        var comps = URLComponents()
+        comps.scheme = "logsense"
+        comps.host = "open"
+        comps.queryItems = [URLQueryItem(name: "scrapboxUrl", value: scrapbox.absoluteString)]
+
+        guard let callback = comps.url else {
+            presentError("LogSenseを開くためのURLを作成できませんでした。")
+            return
+        }
+
+        guard let context = extensionContext else {
+            presentError("共有拡張を完了できませんでした。")
+            return
+        }
+        openCallback(callback, using: context)
     }
 
     private func exifDate(from data: Data) -> String? {
@@ -230,41 +293,81 @@ final class ShareViewController: UIViewController {
         return df.string(from: Date())
     }
 
-    private func uploadImage(data: Data, token: String, completion: @escaping (String?) -> Void) {
+    private func uploadImage(
+        data: Data,
+        token: String,
+        completion: @escaping (Result<String, GyazoUploadError>) -> Void
+    ) {
         let boundary = UUID().uuidString
         var req = URLRequest(url: URL(string: "https://upload.gyazo.com/api/upload")!)
         req.httpMethod = "POST"
+        req.timeoutInterval = 60
         req.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
 
-        var body = Data()
-        func append(_ string: String) { body.append(string.data(using: .utf8)!) }
-
-        append("--\(boundary)\r\n")
-        append("Content-Disposition: form-data; name=\"access_token\"\r\n\r\n")
-        append("\(token)\r\n")
-
-        append("--\(boundary)\r\n")
-        append("Content-Disposition: form-data; name=\"imagedata\"; filename=\"image.jpg\"\r\n")
-        append("Content-Type: image/jpeg\r\n\r\n")
-        body.append(data)
-        append("\r\n")
-        append("--\(boundary)--\r\n")
-
-        req.httpBody = body
-
-        URLSession.shared.dataTask(with: req) { data, response, error in
-            if let error = error {
-                print("[ShareExt] upload error=\(error.localizedDescription)")
-            }
-            guard let data = data,
-                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  let url = json["url"] as? String else {
-                print("[ShareExt] upload failed to parse response")
-                completion(nil)
+        let temporaryURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("logsense-\(UUID().uuidString).multipart")
+        do {
+            guard FileManager.default.createFile(atPath: temporaryURL.path, contents: nil) else {
+                completion(.failure(.requestPreparation))
                 return
             }
-            print("[ShareExt] upload success URL=\(url)")
-            completion(url)
+            let file = try FileHandle(forWritingTo: temporaryURL)
+            defer { try? file.close() }
+
+            func write(_ string: String) throws {
+                try file.write(contentsOf: Data(string.utf8))
+            }
+
+            try write("--\(boundary)\r\n")
+            try write("Content-Disposition: form-data; name=\"access_token\"\r\n\r\n")
+            try write("\(token)\r\n")
+            try write("--\(boundary)\r\n")
+            try write("Content-Disposition: form-data; name=\"imagedata\"; filename=\"image.jpg\"\r\n")
+            try write("Content-Type: image/jpeg\r\n\r\n")
+            try file.write(contentsOf: data)
+            try write("\r\n")
+            try write("--\(boundary)--\r\n")
+            try FileManager.default.setAttributes(
+                [.protectionKey: FileProtectionType.complete],
+                ofItemAtPath: temporaryURL.path
+            )
+        } catch {
+            try? FileManager.default.removeItem(at: temporaryURL)
+            completion(.failure(.requestPreparation))
+            return
+        }
+
+        URLSession.shared.uploadTask(with: req, fromFile: temporaryURL) { data, response, error in
+            defer { try? FileManager.default.removeItem(at: temporaryURL) }
+            if let error = error {
+                print("[ShareExt] upload error=\(error.localizedDescription)")
+                completion(.failure(.network(error)))
+                return
+            }
+
+            guard let httpResponse = response as? HTTPURLResponse else {
+                completion(.failure(.invalidResponse))
+                return
+            }
+
+            let json = data.flatMap {
+                try? JSONSerialization.jsonObject(with: $0) as? [String: Any]
+            }
+            guard (200..<300).contains(httpResponse.statusCode) else {
+                let message = json?["message"] as? String
+                completion(.failure(.server(statusCode: httpResponse.statusCode, message: message)))
+                return
+            }
+
+            guard let urlString = json?["url"] as? String,
+                  let imageURL = URL(string: urlString),
+                  imageURL.scheme?.lowercased() == "https" else {
+                print("[ShareExt] upload failed to parse response")
+                completion(.failure(.invalidImageURL))
+                return
+            }
+            print("[ShareExt] upload success URL=\(urlString)")
+            completion(.success(urlString))
         }.resume()
     }
 
@@ -296,7 +399,7 @@ final class ShareViewController: UIViewController {
         let providers = item.attachments ?? []
         print("[ShareExt] extractPageInfo providers count=\(providers.count)")
         guard !providers.isEmpty else {
-            extensionContext?.completeRequest(returningItems: nil)
+            presentError("共有された内容を読み込めませんでした。")
             return
         }
 
@@ -308,7 +411,7 @@ final class ShareViewController: UIViewController {
                     print("[ShareExt] load URL error=\(String(describing: error))")
                     guard let url = url else {
                         print("[ShareExt] URL provider returned nil")
-                        self.extensionContext?.completeRequest(returningItems: nil)
+                        self.presentError("共有されたURLを読み込めませんでした。")
                         return
                     }
                     let title = item.attributedContentText?.string ?? url.absoluteString
@@ -329,7 +432,7 @@ final class ShareViewController: UIViewController {
                         completion(rawText, firstURL)
                     } else {
                         print("[ShareExt] String provider text did not contain URL")
-                        self.extensionContext?.completeRequest(returningItems: nil)
+                        self.presentError("共有されたテキストに有効なURLがありません。")
                     }
                 }
             }
@@ -338,18 +441,38 @@ final class ShareViewController: UIViewController {
 
         // 3) どちらも取得できない場合は終了
         print("[ShareExt] extractPageInfo no suitable provider")
-        extensionContext?.completeRequest(returningItems: nil)
+        presentError("この種類の共有には対応していません。")
+    }
+
+    private func presentError(_ message: String) {
+        DispatchQueue.main.async { [weak self] in
+            guard let self, !self.isShowingError else { return }
+            self.isShowingError = true
+
+            let alert = UIAlertController(
+                title: "共有できませんでした",
+                message: message,
+                preferredStyle: .alert
+            )
+            alert.addAction(UIAlertAction(title: "閉じる", style: .default) { _ in
+                self.extensionContext?.completeRequest(returningItems: nil)
+            })
+            self.present(alert, animated: true)
+        }
     }
 
     /// Attempts to open the main application with the given callback URL.
     /// Uses `extensionContext.open` and falls back to the responder chain.
     private func openCallback(_ url: URL, using context: NSExtensionContext) {
         context.open(url) { success in
-            print("[ShareExt] context.open success = \(success)")
-            if !success {
-                _ = self.openViaResponderChain(url)
+            DispatchQueue.main.async {
+                print("[ShareExt] context.open success = \(success)")
+                if success || self.openViaResponderChain(url) {
+                    context.completeRequest(returningItems: nil)
+                } else {
+                    self.presentError("LogSenseを開けませんでした。アプリを一度起動してから再試行してください。")
+                }
             }
-            context.completeRequest(returningItems: nil)
         }
     }
 

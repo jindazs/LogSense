@@ -6,5 +6,9 @@
 	<array>
 		<string>group.logsense</string>
 	</array>
+	<key>keychain-access-groups</key>
+	<array>
+		<string>$(AppIdentifierPrefix)group.logsense</string>
+	</array>
 </dict>
 </plist>

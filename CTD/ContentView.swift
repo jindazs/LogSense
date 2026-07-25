@@ -3,7 +3,6 @@ import WebKit
 
 struct UserDefaultsKeys {
     static let projectName = "ProjectName"
-    static let gyazoToken = "GyazoToken"
 }
 let appGroupID = "group.logsense"
 
@@ -68,7 +67,7 @@ class WebViewModel: ObservableObject {
 
 struct ContentView: View {
     @State private var projectName: String = groupDefaults.string(forKey: UserDefaultsKeys.projectName) ?? ""
-    @State private var gyazoToken: String = groupDefaults.string(forKey: UserDefaultsKeys.gyazoToken) ?? ""
+    @State private var gyazoToken: String = GyazoTokenStore.load(migratingFrom: groupDefaults)
     @State private var showSettings: Bool = false
     @State private var selectedTab = 1
     @State private var currentDate = ""
@@ -394,6 +393,7 @@ struct SettingsView: View {
     @Binding var projectName: String
     @Binding var gyazoToken: String
     @Environment(\.presentationMode) var presentationMode
+    @State private var saveErrorMessage: String?
 
     var body: some View {
         NavigationView {
@@ -406,10 +406,22 @@ struct SettingsView: View {
                 }
             }
             .navigationBarItems(trailing: Button("保存") {
-                groupDefaults.set(projectName, forKey: UserDefaultsKeys.projectName)
-                groupDefaults.set(gyazoToken, forKey: UserDefaultsKeys.gyazoToken)
-                presentationMode.wrappedValue.dismiss()
+                do {
+                    try GyazoTokenStore.save(gyazoToken, removingLegacyValueFrom: groupDefaults)
+                    groupDefaults.set(projectName, forKey: UserDefaultsKeys.projectName)
+                    presentationMode.wrappedValue.dismiss()
+                } catch {
+                    saveErrorMessage = error.localizedDescription
+                }
             })
+            .alert("保存できませんでした", isPresented: Binding(
+                get: { saveErrorMessage != nil },
+                set: { if !$0 { saveErrorMessage = nil } }
+            )) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(saveErrorMessage ?? "")
+            }
         }
     }
 }

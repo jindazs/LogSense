@@ -11,6 +11,8 @@
 		B60B509A2C7A91CD003A6E4B /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B60B50992C7A91CD003A6E4B /* ContentView.swift */; };
 		A10000000000000000000002 /* URLUtilities.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000001 /* URLUtilities.swift */; };
 		A10000000000000000000003 /* URLUtilities.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000001 /* URLUtilities.swift */; };
+		A20000000000000000000002 /* GyazoTokenStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000001 /* GyazoTokenStore.swift */; };
+		A20000000000000000000003 /* GyazoTokenStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000001 /* GyazoTokenStore.swift */; };
 		B60B509C2C7A91CF003A6E4B /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = B60B509B2C7A91CF003A6E4B /* Assets.xcassets */; };
 		B60B509F2C7A91CF003A6E4B /* Preview Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = B60B509E2C7A91CF003A6E4B /* Preview Assets.xcassets */; };
 		B60B50A92C7A91CF003A6E4B /* CTDTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B60B50A82C7A91CF003A6E4B /* CTDTests.swift */; };
@@ -74,6 +76,7 @@
 		B6CD17292E2FB90500D5BEC3 /* share.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = share.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		B6CD17392E2FBAB700D5BEC3 /* CTDRelease.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = CTDRelease.entitlements; sourceTree = "<group>"; };
 		A10000000000000000000001 /* URLUtilities.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = URLUtilities.swift; sourceTree = "<group>"; };
+		A20000000000000000000001 /* GyazoTokenStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GyazoTokenStore.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -150,6 +153,7 @@
 		A10000000000000000000004 /* Shared */ = {
 			isa = PBXGroup;
 			children = (
+				A20000000000000000000001 /* GyazoTokenStore.swift */,
 				A10000000000000000000001 /* URLUtilities.swift */,
 			);
 			path = Shared;
@@ -285,6 +289,14 @@
 				TargetAttributes = {
 					B60B50932C7A91CD003A6E4B = {
 						CreatedOnToolsVersion = 15.4;
+						SystemCapabilities = {
+							com.apple.ApplicationGroups.iOS = {
+								enabled = 1;
+							};
+							com.apple.Keychain = {
+								enabled = 1;
+							};
+						};
 					};
 					B60B50A32C7A91CF003A6E4B = {
 						CreatedOnToolsVersion = 15.4;
@@ -296,6 +308,14 @@
 					};
 					B6CD17282E2FB90500D5BEC3 = {
 						CreatedOnToolsVersion = 16.4;
+						SystemCapabilities = {
+							com.apple.ApplicationGroups.iOS = {
+								enabled = 1;
+							};
+							com.apple.Keychain = {
+								enabled = 1;
+							};
+						};
 					};
 				};
 			};
@@ -361,6 +381,7 @@
 				B60B509A2C7A91CD003A6E4B /* ContentView.swift in Sources */,
 				B60B50982C7A91CD003A6E4B /* CTDApp.swift in Sources */,
 				A10000000000000000000002 /* URLUtilities.swift in Sources */,
+				A20000000000000000000002 /* GyazoTokenStore.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -386,6 +407,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				A10000000000000000000003 /* URLUtilities.swift in Sources */,
+				A20000000000000000000003 /* GyazoTokenStore.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
