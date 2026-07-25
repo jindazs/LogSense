@@ -9,28 +9,36 @@ import XCTest
 @testable import CTD
 
 final class CTDTests: XCTestCase {
+    func testScrapboxURLBuilderPreservesBodyAsSingleQueryValue() throws {
+        let body = "[Example & Notes https://example.com/page?a=1&b=2]\n#inbox"
+        let url = try XCTUnwrap(
+            ScrapboxURLBuilder.makePageURL(
+                project: "demo/project",
+                title: "Example & Notes",
+                body: body
+            )
+        )
+        let components = try XCTUnwrap(URLComponents(url: url, resolvingAgainstBaseURL: false))
 
-    override func setUpWithError() throws {
-        // Put setup code here. This method is called before the invocation of each test method in the class.
+        XCTAssertEqual(components.path, "/demo/project/Example & Notes")
+        XCTAssertEqual(components.percentEncodedPath, "/demo%2Fproject/Example%20%26%20Notes")
+        XCTAssertEqual(components.queryItems, [URLQueryItem(name: "body", value: body)])
+        XCTAssertNil(components.fragment)
     }
 
-    override func tearDownWithError() throws {
-        // Put teardown code here. This method is called after the invocation of each test method in the class.
+    func testContentURLAllowsOnlyHTTPSOnScrapboxDomain() {
+        XCTAssertTrue(WebURLPolicy.isAllowedContentURL(URL(string: "https://scrapbox.io/project/page")!))
+        XCTAssertTrue(WebURLPolicy.isAllowedContentURL(URL(string: "https://sub.scrapbox.io/project/page")!))
+        XCTAssertFalse(WebURLPolicy.isAllowedContentURL(URL(string: "http://scrapbox.io/project/page")!))
+        XCTAssertFalse(WebURLPolicy.isAllowedContentURL(URL(string: "https://scrapbox.io.evil.example/page")!))
+        XCTAssertFalse(WebURLPolicy.isAllowedContentURL(URL(string: "javascript:alert(1)")!))
     }
 
-    func testExample() throws {
-        // This is an example of a functional test case.
-        // Use XCTAssert and related functions to verify your tests produce the correct results.
-        // Any test you write for XCTest can be annotated as throws and async.
-        // Mark your test throws to produce an unexpected failure when your test encounters an uncaught error.
-        // Mark your test async to allow awaiting for asynchronous code to complete. Check the results with assertions afterwards.
-    }
+    func testGoogleDomainIsAllowedOnlyForInAppAuthentication() {
+        let googleURL = URL(string: "https://accounts.google.com/signin")!
 
-    func testPerformanceExample() throws {
-        // This is an example of a performance test case.
-        self.measure {
-            // Put the code you want to measure the time of here.
-        }
+        XCTAssertTrue(WebURLPolicy.isAllowedInAppURL(googleURL))
+        XCTAssertFalse(WebURLPolicy.isAllowedContentURL(googleURL))
+        XCTAssertFalse(WebURLPolicy.isAllowedInAppURL(URL(string: "https://accounts.google.com.evil.example")!))
     }
-
 }

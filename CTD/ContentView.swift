@@ -220,7 +220,11 @@ struct ContentView: View {
         print("[LogSense] scrapParam=\(scrapParam ?? "nil")")
 
         guard let encoded = scrapParam,
-              let targetURL = URL(string: encoded) else { return }
+              let targetURL = URL(string: encoded),
+              WebURLPolicy.isAllowedContentURL(targetURL) else {
+            print("[LogSense] rejected untrusted target URL")
+            return
+        }
         print("[LogSense] targetURL = \(targetURL)")
 
         // Switch to main tab and load the page
@@ -324,28 +328,26 @@ class CustomWebView: WKWebView, WKNavigationDelegate {
             return
         }
 
-        // GoogleログインやScrapbox、cosenseなど
-        let allowInAppIfHostContains = [
-            "scrapbox.io",
-            "google",
-            "accounts.google",
-            "cosense"
-        ]
+        if WebURLPolicy.isAllowedInAppURL(url) {
+            decisionHandler(.allow)
+            return
+        }
 
-        // ホスト名に特定文字列が含まれたらアプリ内で開く
-        if let host = url.host,
-           allowInAppIfHostContains.contains(where: { host.contains($0) }) {
+        if url.scheme?.lowercased() == "about" {
             decisionHandler(.allow)
+            return
         }
-        else if navigationAction.navigationType == .linkActivated,
-                UIApplication.shared.canOpenURL(url) {
-            // 外部リンクはブラウザで開く
-            UIApplication.shared.open(url, options: [:], completionHandler: nil)
-            decisionHandler(.cancel)
+
+        decisionHandler(.cancel)
+
+        // Subframe navigation must not launch another application.
+        guard navigationAction.targetFrame?.isMainFrame != false,
+              UIApplication.shared.canOpenURL(url) else {
+            return
         }
-        else {
-            decisionHandler(.allow)
-        }
+
+        // Open untrusted or non-web destinations outside the embedded WebView.
+        UIApplication.shared.open(url, options: [:], completionHandler: nil)
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {

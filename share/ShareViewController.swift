@@ -52,7 +52,16 @@ final class ShareViewController: UIViewController {
             print("[ShareExt] received title = \(title)")
             print("[ShareExt] received url = \(url.absoluteString)")
 
-            let scrapboxURL = self.makeScrapboxURL(project: projectName, title: title, link: url)
+            let body = "[\(title) \(url.absoluteString)]\n#inbox"
+            guard let scrapboxURL = ScrapboxURLBuilder.makePageURL(
+                project: projectName,
+                title: title,
+                body: body
+            ) else {
+                print("[ShareExt] Failed to build Scrapbox URL")
+                self.extensionContext?.completeRequest(returningItems: nil)
+                return
+            }
             print("[ShareExt] scrapboxURL (before encode) = \(scrapboxURL)")
 
             // Build callback URL safely with URLComponents
@@ -60,7 +69,7 @@ final class ShareViewController: UIViewController {
             comps.scheme = "logsense"
             comps.host = "open"
             comps.queryItems = [
-                URLQueryItem(name: "scrapboxUrl", value: scrapboxURL)
+                URLQueryItem(name: "scrapboxUrl", value: scrapboxURL.absoluteString)
             ]
 
             guard let callback = comps.url else {
@@ -129,16 +138,21 @@ final class ShareViewController: UIViewController {
                             return
                         }
 
-                        let scrapbox = self.makeScrapboxURLForImage(project: projectName,
-                                                                    page: date,
-                                                                    imageURL: urlString,
-                                                                    camera: model,
-                                                                    lens: lens)
+                        guard let scrapbox = self.makeScrapboxURLForImage(
+                            project: projectName,
+                            page: date,
+                            imageURL: urlString,
+                            camera: model,
+                            lens: lens
+                        ) else {
+                            self.extensionContext?.completeRequest(returningItems: nil)
+                            return
+                        }
 
                         var comps = URLComponents()
                         comps.scheme = "logsense"
                         comps.host = "open"
-                        comps.queryItems = [URLQueryItem(name: "scrapboxUrl", value: scrapbox)]
+                        comps.queryItems = [URLQueryItem(name: "scrapboxUrl", value: scrapbox.absoluteString)]
 
                         guard let callback = comps.url else {
                             self.extensionContext?.completeRequest(returningItems: nil)
@@ -258,10 +272,7 @@ final class ShareViewController: UIViewController {
                                          page: String,
                                          imageURL: String,
                                          camera: String?,
-                                         lens: String?) -> String {
-        let strictAllowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-._~"))
-        let encTitle = page.addingPercentEncoding(withAllowedCharacters: strictAllowed) ?? page
-
+                                         lens: String?) -> URL? {
         var body = "[\(imageURL)]"
 
         let cam = camera?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
@@ -276,8 +287,7 @@ final class ShareViewController: UIViewController {
             body += "\n" + parts.joined(separator: " + ")
         }
 
-        let encBody = body.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? body
-        return "https://scrapbox.io/\(project)/\(encTitle)?body=\(encBody)"
+        return ScrapboxURLBuilder.makePageURL(project: project, title: page, body: body)
     }
 
     private func extractPageInfo(from item: NSExtensionItem,
@@ -329,24 +339,6 @@ final class ShareViewController: UIViewController {
         // 3) どちらも取得できない場合は終了
         print("[ShareExt] extractPageInfo no suitable provider")
         extensionContext?.completeRequest(returningItems: nil)
-    }
-
-    private func makeScrapboxURL(project: String, title: String, link: URL) -> String {
-        // Scrapboxのパス部分 & URL 部分ともにスラッシュを含めて厳密にエンコードする
-        let strictAllowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-._~"))
-
-        // title がURLでもスラッシュが残らないよう同じルールでエンコード
-        let encTitle = title.addingPercentEncoding(withAllowedCharacters: strictAllowed) ?? title
-
-        // link は既に URL 型なので absoluteString を同じルールで
-        let encLink = link.absoluteString.addingPercentEncoding(withAllowedCharacters: strictAllowed) ?? link.absoluteString
-
-        print("[ShareExt] encTitle=\(encTitle)")
-        print("[ShareExt] encLink=\(encLink)")
-
-        let body = "[\(title) \(link)]\n#inbox"
-        // let encBody = body.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? body
-        return "https://scrapbox.io/\(project)/\(encTitle)?body=\(body)"
     }
 
     /// Attempts to open the main application with the given callback URL.
