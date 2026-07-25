@@ -293,7 +293,7 @@ final class ShareViewController: UIViewController {
         // 1) URL を最優先で取得
         if let provider = providers.first(where: { $0.canLoadObject(ofClass: URL.self) }) {
             print("[ShareExt] found URL provider")
-            provider.loadObject(ofClass: URL.self) { (url, error) in
+            _ = provider.loadObject(ofClass: URL.self) { (url, error) in
                 DispatchQueue.main.async {
                     print("[ShareExt] load URL error=\(String(describing: error))")
                     guard let url = url else {
@@ -311,7 +311,7 @@ final class ShareViewController: UIViewController {
         // 2) テキストからURLを抽出
         if let provider = providers.first(where: { $0.canLoadObject(ofClass: String.self) }) {
             print("[ShareExt] found String provider")
-            provider.loadObject(ofClass: String.self) { (text, error) in
+            _ = provider.loadObject(ofClass: String.self) { (text, error) in
                 DispatchQueue.main.async {
                     print("[ShareExt] load String error=\(String(describing: error))")
                     let rawText = text ?? ""
