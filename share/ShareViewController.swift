@@ -1,6 +1,5 @@
 import UIKit
 import UniformTypeIdentifiers
-import ImageIO
 
 private let appGroupID = "group.logsense"
 
@@ -11,7 +10,7 @@ private func groupDefaults() -> UserDefaults {
        let defaults = UserDefaults(suiteName: appGroupID) {
         return defaults
     }
-    print("[ShareExt] App Group container missing; using UserDefaults.standard")
+    LogSenseLogger.debug("[ShareExt] App Group container missing; using UserDefaults.standard")
     return .standard
 }
 
@@ -49,32 +48,32 @@ final class ShareViewController: UIViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        print("[ShareExt] viewDidLoad")
+        LogSenseLogger.debug("[ShareExt] viewDidLoad")
     }
 
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
-        print("[ShareExt] viewDidAppear")
+        LogSenseLogger.debug("[ShareExt] viewDidAppear")
         guard !hasStartedHandlingShare else { return }
         hasStartedHandlingShare = true
         handleShare()
     }
 
     private func handleShare() {
-        print("[ShareExt] handleShare start")
+        LogSenseLogger.debug("[ShareExt] handleShare start")
         guard let item = extensionContext?.inputItems.first as? NSExtensionItem else {
-            print("[ShareExt] No input item")
+            LogSenseLogger.debug("[ShareExt] No input item")
             presentError("共有された内容を読み込めませんでした。")
             return
         }
         // まず画像共有か確認
         if let provider = item.attachments?.first(where: { $0.hasItemConformingToTypeIdentifier(UTType.image.identifier) }) {
-            print("[ShareExt] found image attachment")
+            LogSenseLogger.debug("[ShareExt] found image attachment")
             handleImage(provider: provider)
             return
         }
 
-        print("[ShareExt] no image attachment, try extracting page info")
+        LogSenseLogger.debug("[ShareExt] no image attachment, try extracting page info")
 
         extractPageInfo(from: item) { title, url in
             // App Group から取得。取得できない場合は標準の UserDefaults を使用
@@ -85,9 +84,9 @@ final class ShareViewController: UIViewController {
                 self.presentError("先にLogSenseの設定画面でプロジェクト名を設定してください。")
                 return
             }
-            print("[ShareExt] projectName = \(projectName)")
-            print("[ShareExt] received title = \(title)")
-            print("[ShareExt] received url = \(url.absoluteString)")
+            LogSenseLogger.debug("[ShareExt] projectName = \(projectName)")
+            LogSenseLogger.debug("[ShareExt] received title = \(title)")
+            LogSenseLogger.debug("[ShareExt] received url = \(url.absoluteString)")
 
             let body = "[\(title) \(url.absoluteString)]\n#inbox"
             guard let scrapboxURL = ScrapboxURLBuilder.makePageURL(
@@ -95,11 +94,11 @@ final class ShareViewController: UIViewController {
                 title: title,
                 body: body
             ) else {
-                print("[ShareExt] Failed to build Scrapbox URL")
+                LogSenseLogger.debug("[ShareExt] Failed to build Scrapbox URL")
                 self.presentError("Scrapbox URLを作成できませんでした。")
                 return
             }
-            print("[ShareExt] scrapboxURL (before encode) = \(scrapboxURL)")
+            LogSenseLogger.debug("[ShareExt] scrapboxURL (before encode) = \(scrapboxURL)")
 
             // Build callback URL safely with URLComponents
             var comps = URLComponents()
@@ -110,25 +109,25 @@ final class ShareViewController: UIViewController {
             ]
 
             guard let callback = comps.url else {
-                print("[ShareExt] Failed to build callback URL via URLComponents")
+                LogSenseLogger.debug("[ShareExt] Failed to build callback URL via URLComponents")
                 self.presentError("LogSenseを開くためのURLを作成できませんでした。")
                 return
             }
 
-            print("[ShareExt] callback url = \(callback.absoluteString)")
+            LogSenseLogger.debug("[ShareExt] callback url = \(callback.absoluteString)")
             if let containerURL = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: "group.logsense") {
-                print("[ShareExt] group container = \(containerURL.path)")
+                LogSenseLogger.debug("[ShareExt] group container = \(containerURL.path)")
             } else {
-                print("[ShareExt] group container NOT found")
+                LogSenseLogger.debug("[ShareExt] group container NOT found")
             }
-            print("[ShareExt] defaults(ProjectName)=\(defaults.string(forKey: "ProjectName") ?? "nil")")
+            LogSenseLogger.debug("[ShareExt] defaults(ProjectName)=\(defaults.string(forKey: "ProjectName") ?? "nil")")
 
             guard let context = self.extensionContext else {
-                print("[ShareExt] extensionContext is nil")
+                LogSenseLogger.debug("[ShareExt] extensionContext is nil")
                 self.presentError("共有拡張を完了できませんでした。")
                 return
             }
-            print("[ShareExt] opening main app")
+            LogSenseLogger.debug("[ShareExt] opening main app")
             self.openCallback(callback, using: context)
         }
     }
@@ -136,9 +135,9 @@ final class ShareViewController: UIViewController {
     private func handleImage(provider: NSItemProvider) {
         _ = provider.loadDataRepresentation(forTypeIdentifier: UTType.image.identifier) { [weak self] data, error in
             guard let self else { return }
-            print("[ShareExt] load data error=\(String(describing: error))")
+            LogSenseLogger.debug("[ShareExt] load data error=\(String(describing: error))")
             guard let data else {
-                print("[ShareExt] failed to load image data")
+                LogSenseLogger.debug("[ShareExt] failed to load image data")
                 self.presentError("共有された画像を読み込めませんでした。")
                 return
             }
@@ -152,7 +151,7 @@ final class ShareViewController: UIViewController {
     }
 
     private func processImage(_ data: Data) {
-        print("[ShareExt] got raw image data size=\(data.count) bytes")
+        LogSenseLogger.debug("[ShareExt] got raw image data size=\(data.count) bytes")
         let defaults = groupDefaults()
         let projectName = defaults.string(forKey: "ProjectName")?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
@@ -162,21 +161,21 @@ final class ShareViewController: UIViewController {
         }
 
         let token = GyazoTokenStore.load(migratingFrom: defaults)
-        print("[ShareExt] project=\(projectName) token.isEmpty=\(token.isEmpty)")
+        LogSenseLogger.debug("[ShareExt] project=\(projectName) token.isEmpty=\(token.isEmpty)")
         guard !token.isEmpty else {
             presentError("先にLogSenseの設定画面でGyazo Tokenを設定してください。")
             return
         }
 
-        let date = exifDate(from: data) ?? currentDate()
-        let (model, lens) = exifCameraInfo(from: data)
+        let metadata = ImageMetadataReader.read(from: data)
+        let date = metadata.date ?? currentDate()
 
         let uploadData: Data
         if let jpg = UIImage(data: data)?.jpegData(compressionQuality: 0.9) {
-            print("[ShareExt] converted image to JPEG size=\(jpg.count)")
+            LogSenseLogger.debug("[ShareExt] converted image to JPEG size=\(jpg.count)")
             uploadData = jpg
         } else {
-            print("[ShareExt] using original data for upload")
+            LogSenseLogger.debug("[ShareExt] using original data for upload")
             uploadData = data
         }
 
@@ -189,8 +188,8 @@ final class ShareViewController: UIViewController {
                         urlString: urlString,
                         projectName: projectName,
                         date: date,
-                        camera: model,
-                        lens: lens
+                        camera: metadata.cameraModel,
+                        lens: metadata.lensModel
                     )
                 }
             case .failure(let error):
@@ -232,59 +231,6 @@ final class ShareViewController: UIViewController {
             return
         }
         openCallback(callback, using: context)
-    }
-
-    private func exifDate(from data: Data) -> String? {
-        guard let source = CGImageSourceCreateWithData(data as CFData, nil),
-              let props = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any] else {
-            print("[ShareExt] no CGImageSource properties")
-            return nil
-        }
-
-        if let exif = props[kCGImagePropertyExifDictionary] as? [CFString: Any] {
-            print("[ShareExt] EXIF dict = \(exif)")
-            if let dateStr = exif[kCGImagePropertyExifDateTimeOriginal] as? String ??
-                exif[kCGImagePropertyExifDateTimeDigitized] as? String {
-                let result = String(dateStr.prefix(10)).replacingOccurrences(of: ":", with: "-")
-                print("[ShareExt] exif date = \(result)")
-                return result
-            }
-        }
-
-        if let tiff = props[kCGImagePropertyTIFFDictionary] as? [CFString: Any] {
-            print("[ShareExt] TIFF dict = \(tiff)")
-            if let dateStr = tiff[kCGImagePropertyTIFFDateTime] as? String {
-                let result = String(dateStr.prefix(10)).replacingOccurrences(of: ":", with: "-")
-                print("[ShareExt] tiff date = \(result)")
-                return result
-            }
-        }
-
-        print("[ShareExt] no exif date found")
-
-        return nil
-    }
-
-    private func exifCameraInfo(from data: Data) -> (String?, String?) {
-        guard let source = CGImageSourceCreateWithData(data as CFData, nil),
-              let props = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any] else {
-            print("[ShareExt] no CGImageSource properties for camera info")
-            return (nil, nil)
-        }
-
-        var model: String?
-        var lens: String?
-
-        if let tiff = props[kCGImagePropertyTIFFDictionary] as? [CFString: Any] {
-            model = tiff[kCGImagePropertyTIFFModel] as? String
-        }
-
-        if let exif = props[kCGImagePropertyExifDictionary] as? [CFString: Any] {
-            lens = exif[kCGImagePropertyExifLensModel] as? String
-        }
-
-        print("[ShareExt] camera model=\(model ?? "nil") lens=\(lens ?? "nil")")
-        return (model, lens)
     }
 
     private func currentDate() -> String {
@@ -340,7 +286,7 @@ final class ShareViewController: UIViewController {
         URLSession.shared.uploadTask(with: req, fromFile: temporaryURL) { data, response, error in
             defer { try? FileManager.default.removeItem(at: temporaryURL) }
             if let error = error {
-                print("[ShareExt] upload error=\(error.localizedDescription)")
+                LogSenseLogger.debug("[ShareExt] upload error=\(error.localizedDescription)")
                 completion(.failure(.network(error)))
                 return
             }
@@ -362,11 +308,11 @@ final class ShareViewController: UIViewController {
             guard let urlString = json?["url"] as? String,
                   let imageURL = URL(string: urlString),
                   imageURL.scheme?.lowercased() == "https" else {
-                print("[ShareExt] upload failed to parse response")
+                LogSenseLogger.debug("[ShareExt] upload failed to parse response")
                 completion(.failure(.invalidImageURL))
                 return
             }
-            print("[ShareExt] upload success URL=\(urlString)")
+            LogSenseLogger.debug("[ShareExt] upload success URL=\(urlString)")
             completion(.success(urlString))
         }.resume()
     }
@@ -397,7 +343,7 @@ final class ShareViewController: UIViewController {
                                  completion: @escaping (String, URL) -> Void) {
 
         let providers = item.attachments ?? []
-        print("[ShareExt] extractPageInfo providers count=\(providers.count)")
+        LogSenseLogger.debug("[ShareExt] extractPageInfo providers count=\(providers.count)")
         guard !providers.isEmpty else {
             presentError("共有された内容を読み込めませんでした。")
             return
@@ -405,12 +351,12 @@ final class ShareViewController: UIViewController {
 
         // 1) URL を最優先で取得
         if let provider = providers.first(where: { $0.canLoadObject(ofClass: URL.self) }) {
-            print("[ShareExt] found URL provider")
+            LogSenseLogger.debug("[ShareExt] found URL provider")
             _ = provider.loadObject(ofClass: URL.self) { (url, error) in
                 DispatchQueue.main.async {
-                    print("[ShareExt] load URL error=\(String(describing: error))")
+                    LogSenseLogger.debug("[ShareExt] load URL error=\(String(describing: error))")
                     guard let url = url else {
-                        print("[ShareExt] URL provider returned nil")
+                        LogSenseLogger.debug("[ShareExt] URL provider returned nil")
                         self.presentError("共有されたURLを読み込めませんでした。")
                         return
                     }
@@ -423,15 +369,15 @@ final class ShareViewController: UIViewController {
 
         // 2) テキストからURLを抽出
         if let provider = providers.first(where: { $0.canLoadObject(ofClass: String.self) }) {
-            print("[ShareExt] found String provider")
+            LogSenseLogger.debug("[ShareExt] found String provider")
             _ = provider.loadObject(ofClass: String.self) { (text, error) in
                 DispatchQueue.main.async {
-                    print("[ShareExt] load String error=\(String(describing: error))")
+                    LogSenseLogger.debug("[ShareExt] load String error=\(String(describing: error))")
                     let rawText = text ?? ""
                     if let firstURL = URL(string: rawText) {
                         completion(rawText, firstURL)
                     } else {
-                        print("[ShareExt] String provider text did not contain URL")
+                        LogSenseLogger.debug("[ShareExt] String provider text did not contain URL")
                         self.presentError("共有されたテキストに有効なURLがありません。")
                     }
                 }
@@ -440,7 +386,7 @@ final class ShareViewController: UIViewController {
         }
 
         // 3) どちらも取得できない場合は終了
-        print("[ShareExt] extractPageInfo no suitable provider")
+        LogSenseLogger.debug("[ShareExt] extractPageInfo no suitable provider")
         presentError("この種類の共有には対応していません。")
     }
 
@@ -466,7 +412,7 @@ final class ShareViewController: UIViewController {
     private func openCallback(_ url: URL, using context: NSExtensionContext) {
         context.open(url) { success in
             DispatchQueue.main.async {
-                print("[ShareExt] context.open success = \(success)")
+                LogSenseLogger.debug("[ShareExt] context.open success = \(success)")
                 if success || self.openViaResponderChain(url) {
                     context.completeRequest(returningItems: nil)
                 } else {
@@ -478,14 +424,14 @@ final class ShareViewController: UIViewController {
 
     @discardableResult
     private func openViaResponderChain(_ url: URL) -> Bool {
-        print("[ShareExt] trying responder chain fallback")
+        LogSenseLogger.debug("[ShareExt] trying responder chain fallback")
         var responder: UIResponder? = self
         while let r = responder {
             if let app = r as? UIApplication {
                 // Prefer modern API
                 if app.responds(to: #selector(UIApplication.open(_:options:completionHandler:))) {
                     app.open(url, options: [:]) { success in
-                        print("[ShareExt] Fallback UIApplication.open success = \(success)")
+                        LogSenseLogger.debug("[ShareExt] Fallback UIApplication.open success = \(success)")
                     }
                     return true
                 }
@@ -493,13 +439,13 @@ final class ShareViewController: UIViewController {
                 let sel = NSSelectorFromString("openURL:")
                 if app.responds(to: sel) {
                     app.perform(sel, with: url)
-                    print("[ShareExt] Fallback openURL via responder chain (legacy)")
+                    LogSenseLogger.debug("[ShareExt] Fallback openURL via responder chain (legacy)")
                     return true
                 }
             }
             responder = r.next
         }
-        print("[ShareExt] Responder chain fallback failed")
+        LogSenseLogger.debug("[ShareExt] Responder chain fallback failed")
         return false
     }
 }

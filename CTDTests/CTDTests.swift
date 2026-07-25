@@ -6,6 +6,9 @@
 //
 
 import XCTest
+import ImageIO
+import UniformTypeIdentifiers
+import UIKit
 @testable import CTD
 
 final class CTDTests: XCTestCase {
@@ -40,5 +43,44 @@ final class CTDTests: XCTestCase {
         XCTAssertTrue(WebURLPolicy.isAllowedInAppURL(googleURL))
         XCTAssertFalse(WebURLPolicy.isAllowedContentURL(googleURL))
         XCTAssertFalse(WebURLPolicy.isAllowedInAppURL(URL(string: "https://accounts.google.com.evil.example")!))
+    }
+
+    func testImageMetadataReaderExtractsExifDateAndCameraInformation() throws {
+        let image = UIGraphicsImageRenderer(size: CGSize(width: 2, height: 2)).image { context in
+            UIColor.red.setFill()
+            context.cgContext.fill(CGRect(x: 0, y: 0, width: 2, height: 2))
+        }
+        let cgImage = try XCTUnwrap(image.cgImage)
+        let data = NSMutableData()
+        let destination = try XCTUnwrap(
+            CGImageDestinationCreateWithData(
+                data,
+                UTType.jpeg.identifier as CFString,
+                1,
+                nil
+            )
+        )
+        let properties: [CFString: Any] = [
+            kCGImagePropertyExifDictionary: [
+                kCGImagePropertyExifDateTimeOriginal: "2024:08:25 12:34:56",
+                kCGImagePropertyExifLensModel: "Test Lens 35mm"
+            ],
+            kCGImagePropertyTIFFDictionary: [
+                kCGImagePropertyTIFFModel: "Test Camera"
+            ]
+        ]
+        CGImageDestinationAddImage(destination, cgImage, properties as CFDictionary)
+        XCTAssertTrue(CGImageDestinationFinalize(destination))
+
+        let metadata = ImageMetadataReader.read(from: data as Data)
+
+        XCTAssertEqual(metadata.date, "2024-08-25")
+        XCTAssertEqual(metadata.cameraModel, "Test Camera")
+        XCTAssertEqual(metadata.lensModel, "Test Lens 35mm")
+    }
+
+    func testImageMetadataReaderRejectsInvalidExifDate() {
+        XCTAssertNil(ImageMetadataReader.normalizedDate("not-a-date"))
+        XCTAssertNil(ImageMetadataReader.normalizedDate(nil))
     }
 }

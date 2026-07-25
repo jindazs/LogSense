@@ -13,6 +13,10 @@
 		A10000000000000000000003 /* URLUtilities.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000001 /* URLUtilities.swift */; };
 		A20000000000000000000002 /* GyazoTokenStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000001 /* GyazoTokenStore.swift */; };
 		A20000000000000000000003 /* GyazoTokenStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000001 /* GyazoTokenStore.swift */; };
+		A30000000000000000000002 /* LogSenseLogger.swift in Sources */ = {isa = PBXBuildFile; fileRef = A30000000000000000000001 /* LogSenseLogger.swift */; };
+		A30000000000000000000003 /* LogSenseLogger.swift in Sources */ = {isa = PBXBuildFile; fileRef = A30000000000000000000001 /* LogSenseLogger.swift */; };
+		A40000000000000000000002 /* ImageMetadataReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = A40000000000000000000001 /* ImageMetadataReader.swift */; };
+		A40000000000000000000003 /* ImageMetadataReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = A40000000000000000000001 /* ImageMetadataReader.swift */; };
 		B60B509C2C7A91CF003A6E4B /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = B60B509B2C7A91CF003A6E4B /* Assets.xcassets */; };
 		B60B509F2C7A91CF003A6E4B /* Preview Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = B60B509E2C7A91CF003A6E4B /* Preview Assets.xcassets */; };
 		B60B50A92C7A91CF003A6E4B /* CTDTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B60B50A82C7A91CF003A6E4B /* CTDTests.swift */; };
@@ -77,6 +81,8 @@
 		B6CD17392E2FBAB700D5BEC3 /* CTDRelease.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = CTDRelease.entitlements; sourceTree = "<group>"; };
 		A10000000000000000000001 /* URLUtilities.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = URLUtilities.swift; sourceTree = "<group>"; };
 		A20000000000000000000001 /* GyazoTokenStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GyazoTokenStore.swift; sourceTree = "<group>"; };
+		A30000000000000000000001 /* LogSenseLogger.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LogSenseLogger.swift; sourceTree = "<group>"; };
+		A40000000000000000000001 /* ImageMetadataReader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageMetadataReader.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -154,6 +160,8 @@
 			isa = PBXGroup;
 			children = (
 				A20000000000000000000001 /* GyazoTokenStore.swift */,
+				A40000000000000000000001 /* ImageMetadataReader.swift */,
+				A30000000000000000000001 /* LogSenseLogger.swift */,
 				A10000000000000000000001 /* URLUtilities.swift */,
 			);
 			path = Shared;
@@ -382,6 +390,8 @@
 				B60B50982C7A91CD003A6E4B /* CTDApp.swift in Sources */,
 				A10000000000000000000002 /* URLUtilities.swift in Sources */,
 				A20000000000000000000002 /* GyazoTokenStore.swift in Sources */,
+				A40000000000000000000002 /* ImageMetadataReader.swift in Sources */,
+				A30000000000000000000002 /* LogSenseLogger.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -408,6 +418,8 @@
 			files = (
 				A10000000000000000000003 /* URLUtilities.swift in Sources */,
 				A20000000000000000000003 /* GyazoTokenStore.swift in Sources */,
+				A40000000000000000000003 /* ImageMetadataReader.swift in Sources */,
+				A30000000000000000000003 /* LogSenseLogger.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

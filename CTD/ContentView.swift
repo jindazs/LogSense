@@ -14,7 +14,7 @@ func sharedDefaults() -> UserDefaults {
        let defaults = UserDefaults(suiteName: appGroupID) {
         return defaults
     }
-    print("[LogSense] App Group container missing; using UserDefaults.standard")
+    LogSenseLogger.debug("[LogSense] App Group container missing; using UserDefaults.standard")
     return .standard
 }
 
@@ -208,28 +208,28 @@ struct ContentView: View {
 
     private func handleIncomingURL(_ url: URL) {
         // Expect: logsense://open?scrapboxUrl=&lt;percentEncodedURL&gt;
-        print("[LogSense] handleIncomingURL \(url.absoluteString)")
+        LogSenseLogger.debug("[LogSense] handleIncomingURL \(url.absoluteString)")
         guard url.scheme == "logsense", url.host == "open" else {
-            print("[LogSense] invalid scheme or host")
+            LogSenseLogger.debug("[LogSense] invalid scheme or host")
             return
         }
 
         let components = URLComponents(url: url, resolvingAgainstBaseURL: false)
         let scrapParam = components?.queryItems?.first(where: { $0.name == "scrapboxUrl" })?.value
-        print("[LogSense] scrapParam=\(scrapParam ?? "nil")")
+        LogSenseLogger.debug("[LogSense] scrapParam=\(scrapParam ?? "nil")")
 
         guard let encoded = scrapParam,
               let targetURL = URL(string: encoded),
               WebURLPolicy.isAllowedContentURL(targetURL) else {
-            print("[LogSense] rejected untrusted target URL")
+            LogSenseLogger.debug("[LogSense] rejected untrusted target URL")
             return
         }
-        print("[LogSense] targetURL = \(targetURL)")
+        LogSenseLogger.debug("[LogSense] targetURL = \(targetURL)")
 
         // Switch to main tab and load the page
         selectedTab = 1
         mainWebViewModel.loadURL(targetURL)
-        print("[LogSense] loaded URL in main web view")
+        LogSenseLogger.debug("[LogSense] loaded URL in main web view")
     }
 }
 
@@ -238,9 +238,6 @@ class CustomWebView: WKWebView, WKNavigationDelegate {
         super.init(frame: frame, configuration: configuration)
         self.allowsBackForwardNavigationGestures = true
         self.navigationDelegate = self
-
-        let userAgent = "Mozilla/5.0 (iOS; CPU iOS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1"
-        self.customUserAgent = userAgent
 
         // 起動時にCookieをWebViewに読み込む
         loadCookies()
@@ -309,7 +306,7 @@ class CustomWebView: WKWebView, WKNavigationDelegate {
         let script = "document.activeElement.blur();"
         self.evaluateJavaScript(script) { _, error in
             if let error = error {
-                print("Failed to dismiss keyboard: \(error.localizedDescription)")
+                LogSenseLogger.debug("Failed to dismiss keyboard: \(error.localizedDescription)")
             }
         }
     }
@@ -393,22 +390,45 @@ struct SettingsView: View {
     @Binding var projectName: String
     @Binding var gyazoToken: String
     @Environment(\.presentationMode) var presentationMode
+    @State private var draftProjectName: String
+    @State private var draftGyazoToken: String
     @State private var saveErrorMessage: String?
+
+    init(projectName: Binding<String>, gyazoToken: Binding<String>) {
+        _projectName = projectName
+        _gyazoToken = gyazoToken
+        _draftProjectName = State(initialValue: projectName.wrappedValue)
+        _draftGyazoToken = State(initialValue: gyazoToken.wrappedValue)
+    }
 
     var body: some View {
         NavigationView {
             Form {
                 Section(header: Text("プロジェクト名")) {
-                    TextField("プロジェクト名", text: $projectName)
+                    TextField("プロジェクト名", text: $draftProjectName)
                 }
                 Section(header: Text("Gyazo Token")) {
-                    SecureField("access token", text: $gyazoToken)
+                    SecureField("access token", text: $draftGyazoToken)
                 }
             }
             .navigationBarItems(trailing: Button("保存") {
+                let normalizedProjectName = draftProjectName
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                let normalizedGyazoToken = draftGyazoToken
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !normalizedProjectName.isEmpty else {
+                    saveErrorMessage = "プロジェクト名を入力してください。"
+                    return
+                }
+
                 do {
-                    try GyazoTokenStore.save(gyazoToken, removingLegacyValueFrom: groupDefaults)
-                    groupDefaults.set(projectName, forKey: UserDefaultsKeys.projectName)
+                    try GyazoTokenStore.save(
+                        normalizedGyazoToken,
+                        removingLegacyValueFrom: groupDefaults
+                    )
+                    groupDefaults.set(normalizedProjectName, forKey: UserDefaultsKeys.projectName)
+                    projectName = normalizedProjectName
+                    gyazoToken = normalizedGyazoToken
                     presentationMode.wrappedValue.dismiss()
                 } catch {
                     saveErrorMessage = error.localizedDescription
