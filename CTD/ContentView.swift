@@ -3,6 +3,7 @@ import WebKit
 
 struct UserDefaultsKeys {
     static let projectName = "ProjectName"
+    static let photoProjectName = "PhotoProjectName"
 }
 let appGroupID = "group.logsense"
 
@@ -20,21 +21,37 @@ func sharedDefaults() -> UserDefaults {
 
 let groupDefaults = sharedDefaults()
 
-class WebViewModel: ObservableObject {
-    @Published var webView: CustomWebView?
+enum AppTab {
+    case todo
+    case home
+    case today
+    case photos
+}
+
+final class WebViewModel: ObservableObject {
+    private var webView: CustomWebView?
     private var initialURL: URL
+    private var pendingURL: URL?
+
+    var isWebViewCreated: Bool {
+        webView != nil
+    }
 
     init(url: URL) {
         self.initialURL = url
-        // ① 直接 webView を生成する
-        self.webView = CustomWebView()
-        // ② 初期ページをロード
-        loadInitialPage(url)
     }
 
-    private func loadInitialPage(_ url: URL) {
-        let request = URLRequest(url: url)
-        webView?.load(request)
+    func webViewForDisplay() -> CustomWebView {
+        if let webView {
+            return webView
+        }
+
+        let webView = CustomWebView()
+        let url = pendingURL ?? initialURL
+        pendingURL = nil
+        webView.load(URLRequest(url: url))
+        self.webView = webView
+        return webView
     }
 
     func goBack() {
@@ -51,26 +68,55 @@ class WebViewModel: ObservableObject {
 
     func resetToInitialPage() {
         webView?.stopLoading()
-        loadInitialPage(initialURL)
+        if let webView {
+            webView.load(URLRequest(url: initialURL))
+        } else {
+            pendingURL = nil
+        }
     }
 
     func updateInitialURL(_ url: URL) {
         initialURL = url
-        loadInitialPage(url)
+        pendingURL = nil
+        webView?.load(URLRequest(url: url))
     }
 
     func loadURL(_ url: URL) {
-        let request = URLRequest(url: url)
-        webView?.load(request)
+        if let webView {
+            webView.load(URLRequest(url: url))
+        } else {
+            pendingURL = url
+        }
+    }
+
+    func loadURLsSequentially(_ urls: [URL], completion: @escaping (Bool) -> Void) {
+        guard let first = urls.first else {
+            completion(true)
+            return
+        }
+        let webView = webViewForDisplay()
+        webView.stopLoading()
+        webView.loadURL(first) { [weak self] success in
+            guard success else {
+                completion(false)
+                return
+            }
+            self?.loadURLsSequentially(Array(urls.dropFirst()), completion: completion)
+        }
     }
 }
 
 struct ContentView: View {
     @State private var projectName: String = groupDefaults.string(forKey: UserDefaultsKeys.projectName) ?? ""
+    @State private var photoProjectName: String = groupDefaults.string(
+        forKey: UserDefaultsKeys.photoProjectName
+    ) ?? SharedSettingsKeys.defaultPhotoProjectName
     @State private var gyazoToken: String = GyazoTokenStore.load(migratingFrom: groupDefaults)
     @State private var showSettings: Bool = false
-    @State private var selectedTab = 1
+    @State private var settingsDidSave: Bool = false
+    @State private var selectedTab: AppTab = .home
     @State private var currentDate = ""
+    @StateObject private var photoImportCoordinator = PhotoImportCoordinator()
 
     @StateObject private var mainWebViewModel = WebViewModel(
         url: URL(string: "https://scrapbox.io/\(groupDefaults.string(forKey: UserDefaultsKeys.projectName) ?? "")")!
@@ -81,17 +127,23 @@ struct ContentView: View {
     @StateObject private var dateWebViewModel = WebViewModel(
         url: URL(string: "https://scrapbox.io/\(groupDefaults.string(forKey: UserDefaultsKeys.projectName) ?? "")")!
     )
+    @StateObject private var photoWebViewModel = WebViewModel(
+        url: URL(string: "https://scrapbox.io/\(groupDefaults.string(forKey: UserDefaultsKeys.photoProjectName) ?? SharedSettingsKeys.defaultPhotoProjectName)")!
+    )
 
     var body: some View {
         ZStack(alignment: .bottom) {
-            if selectedTab == 0 {
+            if selectedTab == .todo {
                 WebViewWrapper(webViewModel: todoWebViewModel)
                     .ignoresSafeArea(edges: .bottom)
-            } else if selectedTab == 1 {
+            } else if selectedTab == .home {
                 WebViewWrapper(webViewModel: mainWebViewModel)
                     .ignoresSafeArea(edges: .bottom)
-            } else if selectedTab == 2 {
+            } else if selectedTab == .today {
                 WebViewWrapper(webViewModel: dateWebViewModel)
+                    .ignoresSafeArea(edges: .bottom)
+            } else if selectedTab == .photos {
+                WebViewWrapper(webViewModel: photoWebViewModel)
                     .ignoresSafeArea(edges: .bottom)
             }
 
@@ -104,7 +156,7 @@ struct ContentView: View {
                     Spacer()
                     // 以下は元のHStack内の3つのButton定義をそのまま貼り付け
                     Button(action: {
-                        selectedTab = 0
+                        selectedTab = .todo
                     }) {
                         Image(systemName: "list.bullet")
                             .resizable()
@@ -113,7 +165,7 @@ struct ContentView: View {
                             .padding(8)
                             .background(Circle().fill(Color.white.opacity(0.9)))
                             .overlay(
-                                Circle().stroke(selectedTab == 0 ? Color.gray.opacity(0.3) : Color.clear, lineWidth: 2)
+                                Circle().stroke(selectedTab == .todo ? Color.gray.opacity(0.3) : Color.clear, lineWidth: 2)
                             )
                             .shadow(radius: 4)
                     }
@@ -122,7 +174,7 @@ struct ContentView: View {
                     }
                     Spacer()
                     Button(action: {
-                        selectedTab = 1
+                        selectedTab = .home
                     }) {
                         Image(systemName: "house.fill")
                             .resizable()
@@ -131,7 +183,7 @@ struct ContentView: View {
                             .padding(8)
                             .background(Circle().fill(Color.white.opacity(0.9)))
                             .overlay(
-                                Circle().stroke(selectedTab == 1 ? Color.gray.opacity(0.3) : Color.clear, lineWidth: 2)
+                                Circle().stroke(selectedTab == .home ? Color.gray.opacity(0.3) : Color.clear, lineWidth: 2)
                             )
                             .shadow(radius: 4)
                     }
@@ -139,11 +191,12 @@ struct ContentView: View {
                         mainWebViewModel.resetToInitialPage()
                     }
                     .onTapGesture(count: 3) {
-                        showSettings.toggle()
+                        settingsDidSave = false
+                        showSettings = true
                     }
                     Spacer()
                     Button(action: {
-                        selectedTab = 2
+                        selectedTab = .today
                     }) {
                         Image(systemName: "calendar")
                             .resizable()
@@ -152,7 +205,7 @@ struct ContentView: View {
                             .padding(8)
                             .background(Circle().fill(Color.white.opacity(0.9)))
                             .overlay(
-                                Circle().stroke(selectedTab == 2 ? Color.gray.opacity(0.3) : Color.clear, lineWidth: 2)
+                                Circle().stroke(selectedTab == .today ? Color.gray.opacity(0.3) : Color.clear, lineWidth: 2)
                             )
                             .shadow(radius: 4)
                     }
@@ -169,18 +222,59 @@ struct ContentView: View {
                         }
                     }
                     Spacer()
+                    Button(action: {
+                        selectedTab = .photos
+                    }) {
+                        Image(systemName: "photo.on.rectangle.angled")
+                            .resizable()
+                            .scaledToFit()
+                            .frame(width: 12.5, height: 12.5)
+                            .padding(8)
+                            .background(Circle().fill(Color.white.opacity(0.9)))
+                            .overlay(
+                                Circle().stroke(selectedTab == .photos ? Color.gray.opacity(0.3) : Color.clear, lineWidth: 2)
+                            )
+                            .shadow(radius: 4)
+                    }
+                    .onTapGesture(count: 2) {
+                        photoWebViewModel.resetToInitialPage()
+                    }
+                    Spacer()
                 }
             }
             .padding(.bottom, 8)
+
+            if photoImportCoordinator.isPresented {
+                PhotoImportProgressView(coordinator: photoImportCoordinator)
+                    .padding(.horizontal, 24)
+                    .padding(.bottom, 72)
+            }
         }
         .onAppear {
             projectName = groupDefaults.string(forKey: UserDefaultsKeys.projectName) ?? ""
+            photoProjectName = groupDefaults.string(forKey: UserDefaultsKeys.photoProjectName)
+                ?? SharedSettingsKeys.defaultPhotoProjectName
             currentDate = getCurrentDate()
             let dateUrl = URL(string: "https://scrapbox.io/\(projectName)/\(currentDate)")!
-            dateWebViewModel.loadURL(dateUrl)
+            dateWebViewModel.updateInitialURL(dateUrl)
+            let photoURL = URL(string: "https://scrapbox.io/\(photoProjectName)")!
+            photoWebViewModel.updateInitialURL(photoURL)
+            if !photoImportCoordinator.isPresented,
+               let pending = try? PhotoImportStore.shared().pendingBatches().first {
+                beginPhotoImport(batchID: pending.id)
+            }
         }
-        .sheet(isPresented: $showSettings, onDismiss: applyProjectName) {
-            SettingsView(projectName: $projectName, gyazoToken: $gyazoToken)
+        .sheet(isPresented: $showSettings, onDismiss: {
+            if settingsDidSave {
+                applyProjectName()
+            }
+        }) {
+            SettingsView(
+                projectName: $projectName,
+                photoProjectName: $photoProjectName,
+                gyazoToken: $gyazoToken,
+                onSave: { settingsDidSave = true }
+            )
         }
         .onOpenURL { url in
             handleIncomingURL(url)
@@ -194,10 +288,11 @@ struct ContentView: View {
         let todoURL = URL(string: "https://scrapbox.io/\(projectName)/ToDo")!
         todoWebViewModel.updateInitialURL(todoURL)
 
-        let dateBaseURL = mainURL
-        dateWebViewModel.updateInitialURL(dateBaseURL)
         let dateURL = URL(string: "https://scrapbox.io/\(projectName)/\(currentDate)")!
-        dateWebViewModel.loadURL(dateURL)
+        dateWebViewModel.updateInitialURL(dateURL)
+
+        let photoURL = URL(string: "https://scrapbox.io/\(photoProjectName)")!
+        photoWebViewModel.updateInitialURL(photoURL)
     }
 
     func getCurrentDate() -> String {
@@ -207,14 +302,28 @@ struct ContentView: View {
     }
 
     private func handleIncomingURL(_ url: URL) {
-        // Expect: logsense://open?scrapboxUrl=&lt;percentEncodedURL&gt;
         LogSenseLogger.debug("[LogSense] handleIncomingURL \(url.absoluteString)")
-        guard url.scheme == "logsense", url.host == "open" else {
+        guard url.scheme == "logsense" else {
             LogSenseLogger.debug("[LogSense] invalid scheme or host")
             return
         }
 
         let components = URLComponents(url: url, resolvingAgainstBaseURL: false)
+        if url.host == "import-photos" {
+            guard let value = components?.queryItems?.first(where: { $0.name == "batchID" })?.value,
+                  let batchID = UUID(uuidString: value) else {
+                LogSenseLogger.debug("[LogSense] invalid photo batch ID")
+                return
+            }
+            beginPhotoImport(batchID: batchID)
+            return
+        }
+
+        guard url.host == "open" else {
+            LogSenseLogger.debug("[LogSense] invalid host")
+            return
+        }
+
         let scrapParam = components?.queryItems?.first(where: { $0.name == "scrapboxUrl" })?.value
         LogSenseLogger.debug("[LogSense] scrapParam=\(scrapParam ?? "nil")")
 
@@ -227,45 +336,79 @@ struct ContentView: View {
         LogSenseLogger.debug("[LogSense] targetURL = \(targetURL)")
 
         // Switch to main tab and load the page
-        selectedTab = 1
+        selectedTab = .home
         mainWebViewModel.loadURL(targetURL)
         LogSenseLogger.debug("[LogSense] loaded URL in main web view")
+    }
+
+    private func beginPhotoImport(batchID: UUID) {
+        do {
+            let batch = try PhotoImportStore.shared().load(batchID)
+            selectedTab = batch.destination == .photo ? .photos : .home
+            let targetWebView = batch.destination == .photo ? photoWebViewModel : mainWebViewModel
+            photoImportCoordinator.start(
+                batchID: batchID,
+                token: GyazoTokenStore.load(migratingFrom: groupDefaults)
+            ) { appends, completion in
+                let urls = appends.compactMap {
+                    ScrapboxURLBuilder.makePageURL(
+                        project: batch.projectName,
+                        title: $0.pageTitle,
+                        body: $0.body
+                    )
+                }
+                guard urls.count == appends.count else {
+                    completion(false)
+                    return
+                }
+                targetWebView.loadURLsSequentially(urls, completion: completion)
+            }
+        } catch {
+            LogSenseLogger.debug("[LogSense] photo batch load failed: \(error.localizedDescription)")
+        }
     }
 }
 
 class CustomWebView: WKWebView, WKNavigationDelegate {
+    private var loadCompletion: ((Bool) -> Void)?
+
     override init(frame: CGRect, configuration: WKWebViewConfiguration) {
         super.init(frame: frame, configuration: configuration)
         self.allowsBackForwardNavigationGestures = true
         self.navigationDelegate = self
-
-        // 起動時にCookieをWebViewに読み込む
-        loadCookies()
     }
 
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
     }
 
+    func loadURL(_ url: URL, completion: @escaping (Bool) -> Void) {
+        loadCompletion = completion
+        load(URLRequest(url: url))
+    }
+
     // -----------------------------
     // ここからが「Today」ボタンと「Done」ボタンの実装
     // -----------------------------
+    private lazy var cachedInputAccessoryView: UIView = makeInputAccessoryView()
+
     override var inputAccessoryView: UIView? {
+        cachedInputAccessoryView
+    }
+
+    private func makeInputAccessoryView() -> UIView {
         let accessoryView = UIView(frame: CGRect(x: 0, y: 0, width: UIScreen.main.bounds.width, height: 40))
         accessoryView.backgroundColor = UIColor.systemGray5
+        accessoryView.autoresizingMask = [.flexibleWidth]
 
-        let buttonStack = UIStackView(frame: accessoryView.bounds)
+        let buttonStack = UIStackView()
         buttonStack.axis = .horizontal
         buttonStack.distribution = .fillEqually
+        buttonStack.translatesAutoresizingMaskIntoConstraints = false
 
         let dateButton = UIButton(type: .system)
         dateButton.setTitle("Today", for: .normal)
-
-        // シングルタップで日付を挿入
-        let singleTap = UITapGestureRecognizer(target: self, action: #selector(insertDate))
-        singleTap.numberOfTapsRequired = 1
-
-        dateButton.addGestureRecognizer(singleTap)
+        dateButton.addTarget(self, action: #selector(insertDate), for: .touchUpInside)
 
         let dismissButton = UIButton(type: .system)
         dismissButton.setTitle("Done", for: .normal)
@@ -274,6 +417,12 @@ class CustomWebView: WKWebView, WKNavigationDelegate {
         buttonStack.addArrangedSubview(dateButton)
         buttonStack.addArrangedSubview(dismissButton)
         accessoryView.addSubview(buttonStack)
+        NSLayoutConstraint.activate([
+            buttonStack.leadingAnchor.constraint(equalTo: accessoryView.leadingAnchor),
+            buttonStack.trailingAnchor.constraint(equalTo: accessoryView.trailingAnchor),
+            buttonStack.topAnchor.constraint(equalTo: accessoryView.topAnchor),
+            buttonStack.bottomAnchor.constraint(equalTo: accessoryView.bottomAnchor)
+        ])
 
         return accessoryView
     }
@@ -347,38 +496,38 @@ class CustomWebView: WKWebView, WKNavigationDelegate {
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-        // ページ読み込み完了時にCookieを保存
-        saveCookies()
+        let completion = loadCompletion
+        loadCompletion = nil
+        completion?(true)
     }
 
-    // MARK: - Cookie Persistence
-
-    /// WebViewのCookieをHTTPCookieStorageに保存
-    private func saveCookies() {
-        WKWebsiteDataStore.default().httpCookieStore.getAllCookies { cookies in
-            let storage = HTTPCookieStorage.shared
-            for cookie in cookies {
-                storage.setCookie(cookie)
-            }
-        }
+    func webView(
+        _ webView: WKWebView,
+        didFail navigation: WKNavigation!,
+        withError error: Error
+    ) {
+        let completion = loadCompletion
+        loadCompletion = nil
+        completion?(false)
     }
 
-    /// アプリ起動時などにHTTPCookieStorageに保存してあるCookieをWebViewに反映
-    private func loadCookies() {
-        let storage = HTTPCookieStorage.shared
-        let cookieStore = WKWebsiteDataStore.default().httpCookieStore
-        storage.cookies?.forEach { cookieStore.setCookie($0) }
+    func webView(
+        _ webView: WKWebView,
+        didFailProvisionalNavigation navigation: WKNavigation!,
+        withError error: Error
+    ) {
+        let completion = loadCompletion
+        loadCompletion = nil
+        completion?(false)
     }
+
 }
 
 struct WebViewWrapper: UIViewRepresentable {
     @ObservedObject var webViewModel: WebViewModel
 
     func makeUIView(context: Context) -> CustomWebView {
-        if webViewModel.webView == nil {
-            webViewModel.webView = CustomWebView()
-        }
-        return webViewModel.webView!
+        webViewModel.webViewForDisplay()
     }
 
     func updateUIView(_ uiView: CustomWebView, context: Context) {
@@ -388,17 +537,28 @@ struct WebViewWrapper: UIViewRepresentable {
 
 struct SettingsView: View {
     @Binding var projectName: String
+    @Binding var photoProjectName: String
     @Binding var gyazoToken: String
     @Environment(\.presentationMode) var presentationMode
     @State private var draftProjectName: String
+    @State private var draftPhotoProjectName: String
     @State private var draftGyazoToken: String
     @State private var saveErrorMessage: String?
+    let onSave: () -> Void
 
-    init(projectName: Binding<String>, gyazoToken: Binding<String>) {
+    init(
+        projectName: Binding<String>,
+        photoProjectName: Binding<String>,
+        gyazoToken: Binding<String>,
+        onSave: @escaping () -> Void
+    ) {
         _projectName = projectName
+        _photoProjectName = photoProjectName
         _gyazoToken = gyazoToken
         _draftProjectName = State(initialValue: projectName.wrappedValue)
+        _draftPhotoProjectName = State(initialValue: photoProjectName.wrappedValue)
         _draftGyazoToken = State(initialValue: gyazoToken.wrappedValue)
+        self.onSave = onSave
     }
 
     var body: some View {
@@ -406,6 +566,9 @@ struct SettingsView: View {
             Form {
                 Section(header: Text("プロジェクト名")) {
                     TextField("プロジェクト名", text: $draftProjectName)
+                }
+                Section(header: Text("写真プロジェクト名")) {
+                    TextField("写真プロジェクト名", text: $draftPhotoProjectName)
                 }
                 Section(header: Text("Gyazo Token")) {
                     SecureField("access token", text: $draftGyazoToken)
@@ -416,8 +579,18 @@ struct SettingsView: View {
                     .trimmingCharacters(in: .whitespacesAndNewlines)
                 let normalizedGyazoToken = draftGyazoToken
                     .trimmingCharacters(in: .whitespacesAndNewlines)
+                let normalizedPhotoProjectName = draftPhotoProjectName
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
                 guard !normalizedProjectName.isEmpty else {
                     saveErrorMessage = "プロジェクト名を入力してください。"
+                    return
+                }
+                guard !normalizedPhotoProjectName.isEmpty else {
+                    saveErrorMessage = "写真プロジェクト名を入力してください。"
+                    return
+                }
+                guard normalizedProjectName != normalizedPhotoProjectName else {
+                    saveErrorMessage = "メインと写真には異なるプロジェクトを指定してください。"
                     return
                 }
 
@@ -427,8 +600,11 @@ struct SettingsView: View {
                         removingLegacyValueFrom: groupDefaults
                     )
                     groupDefaults.set(normalizedProjectName, forKey: UserDefaultsKeys.projectName)
+                    groupDefaults.set(normalizedPhotoProjectName, forKey: UserDefaultsKeys.photoProjectName)
                     projectName = normalizedProjectName
+                    photoProjectName = normalizedPhotoProjectName
                     gyazoToken = normalizedGyazoToken
+                    onSave()
                     presentationMode.wrappedValue.dismiss()
                 } catch {
                     saveErrorMessage = error.localizedDescription
@@ -443,6 +619,49 @@ struct SettingsView: View {
                 Text(saveErrorMessage ?? "")
             }
         }
+    }
+}
+
+struct PhotoImportProgressView: View {
+    @ObservedObject var coordinator: PhotoImportCoordinator
+
+    var body: some View {
+        VStack(spacing: 12) {
+            Text(coordinator.statusMessage)
+                .font(.callout)
+                .multilineTextAlignment(.center)
+            ProgressView(value: coordinator.progress)
+                .progressViewStyle(.linear)
+            if let batch = coordinator.batch {
+                Text("\(batch.uploadedCount + batch.failedCount) / \(batch.items.count)")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            if coordinator.canRetry || coordinator.canCommitSuccesses {
+                HStack {
+                    if coordinator.canRetry {
+                        Button("失敗分を再試行") {
+                            coordinator.retryFailedItems()
+                        }
+                    }
+                    if coordinator.canCommitSuccesses {
+                        Button("成功分だけ追加") {
+                            coordinator.commitSuccessfulItems()
+                        }
+                    }
+                }
+                .buttonStyle(.bordered)
+            }
+            if !coordinator.isWorking {
+                Button("閉じる") {
+                    coordinator.close()
+                }
+                .font(.caption)
+            }
+        }
+        .padding()
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
+        .shadow(radius: 8)
     }
 }
 

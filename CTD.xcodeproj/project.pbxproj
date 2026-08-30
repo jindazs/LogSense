@@ -17,6 +17,9 @@
 		A30000000000000000000003 /* LogSenseLogger.swift in Sources */ = {isa = PBXBuildFile; fileRef = A30000000000000000000001 /* LogSenseLogger.swift */; };
 		A40000000000000000000002 /* ImageMetadataReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = A40000000000000000000001 /* ImageMetadataReader.swift */; };
 		A40000000000000000000003 /* ImageMetadataReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = A40000000000000000000001 /* ImageMetadataReader.swift */; };
+		A50000000000000000000002 /* PhotoImportBatch.swift in Sources */ = {isa = PBXBuildFile; fileRef = A50000000000000000000001 /* PhotoImportBatch.swift */; };
+		A50000000000000000000003 /* PhotoImportBatch.swift in Sources */ = {isa = PBXBuildFile; fileRef = A50000000000000000000001 /* PhotoImportBatch.swift */; };
+		A60000000000000000000002 /* PhotoImportCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = A60000000000000000000001 /* PhotoImportCoordinator.swift */; };
 		B60B509C2C7A91CF003A6E4B /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = B60B509B2C7A91CF003A6E4B /* Assets.xcassets */; };
 		B60B509F2C7A91CF003A6E4B /* Preview Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = B60B509E2C7A91CF003A6E4B /* Preview Assets.xcassets */; };
 		B60B50A92C7A91CF003A6E4B /* CTDTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B60B50A82C7A91CF003A6E4B /* CTDTests.swift */; };
@@ -83,6 +86,8 @@
 		A20000000000000000000001 /* GyazoTokenStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GyazoTokenStore.swift; sourceTree = "<group>"; };
 		A30000000000000000000001 /* LogSenseLogger.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LogSenseLogger.swift; sourceTree = "<group>"; };
 		A40000000000000000000001 /* ImageMetadataReader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageMetadataReader.swift; sourceTree = "<group>"; };
+		A50000000000000000000001 /* PhotoImportBatch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoImportBatch.swift; sourceTree = "<group>"; };
+		A60000000000000000000001 /* PhotoImportCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoImportCoordinator.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -162,6 +167,7 @@
 				A20000000000000000000001 /* GyazoTokenStore.swift */,
 				A40000000000000000000001 /* ImageMetadataReader.swift */,
 				A30000000000000000000001 /* LogSenseLogger.swift */,
+				A50000000000000000000001 /* PhotoImportBatch.swift */,
 				A10000000000000000000001 /* URLUtilities.swift */,
 			);
 			path = Shared;
@@ -174,6 +180,7 @@
 				B6CD17242E2FB81C00D5BEC3 /* Info.plist */,
 				B60B50972C7A91CD003A6E4B /* CTDApp.swift */,
 				B60B50992C7A91CD003A6E4B /* ContentView.swift */,
+				A60000000000000000000001 /* PhotoImportCoordinator.swift */,
 				B60B509B2C7A91CF003A6E4B /* Assets.xcassets */,
 				B60B509D2C7A91CF003A6E4B /* Preview Content */,
 			);
@@ -392,6 +399,8 @@
 				A20000000000000000000002 /* GyazoTokenStore.swift in Sources */,
 				A40000000000000000000002 /* ImageMetadataReader.swift in Sources */,
 				A30000000000000000000002 /* LogSenseLogger.swift in Sources */,
+				A50000000000000000000002 /* PhotoImportBatch.swift in Sources */,
+				A60000000000000000000002 /* PhotoImportCoordinator.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -420,6 +429,7 @@
 				A20000000000000000000003 /* GyazoTokenStore.swift in Sources */,
 				A40000000000000000000003 /* ImageMetadataReader.swift in Sources */,
 				A30000000000000000000003 /* LogSenseLogger.swift in Sources */,
+				A50000000000000000000003 /* PhotoImportBatch.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

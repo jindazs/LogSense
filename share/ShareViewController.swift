@@ -14,30 +14,6 @@ private func groupDefaults() -> UserDefaults {
     return .standard
 }
 
-private enum GyazoUploadError: LocalizedError {
-    case requestPreparation
-    case network(Error)
-    case invalidResponse
-    case server(statusCode: Int, message: String?)
-    case invalidImageURL
-
-    var errorDescription: String? {
-        switch self {
-        case .requestPreparation:
-            return "画像アップロードの準備に失敗しました。"
-        case .network(let error):
-            return "Gyazoへ接続できませんでした。\(error.localizedDescription)"
-        case .invalidResponse:
-            return "Gyazoから不正な応答を受信しました。"
-        case .server(let statusCode, let message):
-            let detail = message.map { " \($0)" } ?? ""
-            return "Gyazoへのアップロードに失敗しました（HTTP \(statusCode)）。\(detail)"
-        case .invalidImageURL:
-            return "Gyazoの応答に有効な画像URLがありませんでした。"
-        }
-    }
-}
-
 final class ShareViewController: UIViewController {
     private let imageProcessingQueue = DispatchQueue(
         label: "LogSense.ShareExtension.ImageProcessing",
@@ -66,10 +42,17 @@ final class ShareViewController: UIViewController {
             presentError("共有された内容を読み込めませんでした。")
             return
         }
-        // まず画像共有か確認
-        if let provider = item.attachments?.first(where: { $0.hasItemConformingToTypeIdentifier(UTType.image.identifier) }) {
-            LogSenseLogger.debug("[ShareExt] found image attachment")
-            handleImage(provider: provider)
+        let imageProviders = extensionContext?.inputItems
+            .compactMap { $0 as? NSExtensionItem }
+            .flatMap { $0.attachments ?? [] }
+            .filter { $0.hasItemConformingToTypeIdentifier(UTType.image.identifier) } ?? []
+        if !imageProviders.isEmpty {
+            LogSenseLogger.debug("[ShareExt] found \(imageProviders.count) image attachments")
+            guard imageProviders.count <= 10 else {
+                presentError("一度に共有できる写真は10枚までです。")
+                return
+            }
+            presentPhotoDestinationPicker(providers: imageProviders)
             return
         }
 
@@ -132,102 +115,168 @@ final class ShareViewController: UIViewController {
         }
     }
 
-    private func handleImage(provider: NSItemProvider) {
-        _ = provider.loadDataRepresentation(forTypeIdentifier: UTType.image.identifier) { [weak self] data, error in
+    private func presentPhotoDestinationPicker(providers: [NSItemProvider]) {
+        let defaults = groupDefaults()
+        let primaryProject = defaults.string(forKey: SharedSettingsKeys.primaryProjectName)?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let configuredPhotoProject = defaults.string(forKey: SharedSettingsKeys.photoProjectName)?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let photoProject = configuredPhotoProject.isEmpty
+            ? SharedSettingsKeys.defaultPhotoProjectName
+            : configuredPhotoProject
+
+        guard !primaryProject.isEmpty else {
+            presentError("先にLogSenseの設定画面でプロジェクト名を設定してください。")
+            return
+        }
+        guard !GyazoTokenStore.load(migratingFrom: defaults).isEmpty else {
+            presentError("先にLogSenseの設定画面でGyazo Tokenを設定してください。")
+            return
+        }
+
+        DispatchQueue.main.async {
+            let picker = UIAlertController(
+                title: "共有先を選択",
+                message: "\(providers.count)枚の写真をアップロードします。",
+                preferredStyle: .actionSheet
+            )
+            picker.addAction(UIAlertAction(title: "メイン：\(primaryProject)", style: .default) { _ in
+                self.stageImages(providers: providers, destination: .primary, projectName: primaryProject)
+            })
+            picker.addAction(UIAlertAction(title: "写真：\(photoProject)", style: .default) { _ in
+                self.stageImages(providers: providers, destination: .photo, projectName: photoProject)
+            })
+            picker.addAction(UIAlertAction(title: "キャンセル", style: .cancel) { _ in
+                self.extensionContext?.completeRequest(returningItems: nil)
+            })
+            if let popover = picker.popoverPresentationController {
+                popover.sourceView = self.view
+                popover.sourceRect = CGRect(
+                    x: self.view.bounds.midX,
+                    y: self.view.bounds.midY,
+                    width: 1,
+                    height: 1
+                )
+            }
+            self.present(picker, animated: true)
+        }
+    }
+
+    private func stageImages(
+        providers: [NSItemProvider],
+        destination: PhotoImportDestination,
+        projectName: String
+    ) {
+        let batchID = UUID()
+        do {
+            let store = try PhotoImportStore.shared()
+            _ = try store.createDirectory(for: batchID)
+            loadAndStageImage(
+                at: 0,
+                providers: providers,
+                batchID: batchID,
+                destination: destination,
+                projectName: projectName,
+                items: [],
+                store: store
+            )
+        } catch {
+            presentError(error.localizedDescription)
+        }
+    }
+
+    private func loadAndStageImage(
+        at index: Int,
+        providers: [NSItemProvider],
+        batchID: UUID,
+        destination: PhotoImportDestination,
+        projectName: String,
+        items: [PhotoImportItem],
+        store: PhotoImportStore
+    ) {
+        guard index < providers.count else {
+            let batch = PhotoImportBatch(
+                id: batchID,
+                destination: destination,
+                projectName: projectName,
+                createdAt: Date(),
+                items: items,
+                state: .staged
+            )
+            do {
+                try store.save(batch)
+                openPhotoImport(batchID: batchID)
+            } catch {
+                try? store.remove(batchID)
+                presentError(error.localizedDescription)
+            }
+            return
+        }
+
+        _ = providers[index].loadDataRepresentation(
+            forTypeIdentifier: UTType.image.identifier
+        ) { [weak self] data, error in
             guard let self else { return }
-            LogSenseLogger.debug("[ShareExt] load data error=\(String(describing: error))")
             guard let data else {
-                LogSenseLogger.debug("[ShareExt] failed to load image data")
-                self.presentError("共有された画像を読み込めませんでした。")
+                LogSenseLogger.debug("[ShareExt] image \(index) load error=\(String(describing: error))")
+                try? store.remove(batchID)
+                self.presentError("\(index + 1)枚目の画像を読み込めませんでした。")
                 return
             }
 
             self.imageProcessingQueue.async {
                 autoreleasepool {
-                    self.processImage(data)
-                }
-            }
-        }
-    }
+                    let metadata = ImageMetadataReader.read(from: data)
+                    let date = metadata.date ?? self.currentDate()
+                    guard let jpeg = UIImage(data: data)?.jpegData(compressionQuality: 0.9) else {
+                        try? store.remove(batchID)
+                        self.presentError("\(index + 1)枚目の画像を変換できませんでした。")
+                        return
+                    }
+                    let filename = String(format: "%03d-%@.jpg", index, UUID().uuidString)
+                    let fileURL = store.imageURL(batchID: batchID, filename: filename)
+                    do {
+                        try jpeg.write(to: fileURL, options: [.atomic, .completeFileProtection])
+                    } catch {
+                        try? store.remove(batchID)
+                        self.presentError("\(index + 1)枚目の画像を保存できませんでした。")
+                        return
+                    }
 
-    private func processImage(_ data: Data) {
-        LogSenseLogger.debug("[ShareExt] got raw image data size=\(data.count) bytes")
-        let defaults = groupDefaults()
-        let projectName = defaults.string(forKey: "ProjectName")?
-            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        guard !projectName.isEmpty else {
-            presentError("先にLogSenseの設定画面でプロジェクト名を設定してください。")
-            return
-        }
-
-        let token = GyazoTokenStore.load(migratingFrom: defaults)
-        LogSenseLogger.debug("[ShareExt] project=\(projectName) token.isEmpty=\(token.isEmpty)")
-        guard !token.isEmpty else {
-            presentError("先にLogSenseの設定画面でGyazo Tokenを設定してください。")
-            return
-        }
-
-        let metadata = ImageMetadataReader.read(from: data)
-        let date = metadata.date ?? currentDate()
-
-        let uploadData: Data
-        if let jpg = UIImage(data: data)?.jpegData(compressionQuality: 0.9) {
-            LogSenseLogger.debug("[ShareExt] converted image to JPEG size=\(jpg.count)")
-            uploadData = jpg
-        } else {
-            LogSenseLogger.debug("[ShareExt] using original data for upload")
-            uploadData = data
-        }
-
-        uploadImage(data: uploadData, token: token) { [weak self] result in
-            guard let self else { return }
-            switch result {
-            case .success(let urlString):
-                DispatchQueue.main.async {
-                    self.openUploadedImage(
-                        urlString: urlString,
-                        projectName: projectName,
-                        date: date,
+                    var nextItems = items
+                    nextItems.append(PhotoImportItem(
+                        id: UUID(),
+                        originalIndex: index,
+                        localFilename: filename,
+                        capturedDate: date,
                         camera: metadata.cameraModel,
-                        lens: metadata.lensModel
+                        lens: metadata.lensModel,
+                        state: .staged,
+                        gyazoURL: nil,
+                        attemptCount: 0,
+                        errorMessage: nil
+                    ))
+                    self.loadAndStageImage(
+                        at: index + 1,
+                        providers: providers,
+                        batchID: batchID,
+                        destination: destination,
+                        projectName: projectName,
+                        items: nextItems,
+                        store: store
                     )
                 }
-            case .failure(let error):
-                self.presentError(error.localizedDescription)
             }
         }
     }
 
-    private func openUploadedImage(
-        urlString: String,
-        projectName: String,
-        date: String,
-        camera: String?,
-        lens: String?
-    ) {
-        guard let scrapbox = makeScrapboxURLForImage(
-            project: projectName,
-            page: date,
-            imageURL: urlString,
-            camera: camera,
-            lens: lens
-        ) else {
-            presentError("Scrapbox URLを作成できませんでした。")
-            return
-        }
-
-        var comps = URLComponents()
-        comps.scheme = "logsense"
-        comps.host = "open"
-        comps.queryItems = [URLQueryItem(name: "scrapboxUrl", value: scrapbox.absoluteString)]
-
-        guard let callback = comps.url else {
+    private func openPhotoImport(batchID: UUID) {
+        var components = URLComponents()
+        components.scheme = "logsense"
+        components.host = "import-photos"
+        components.queryItems = [URLQueryItem(name: "batchID", value: batchID.uuidString)]
+        guard let callback = components.url, let context = extensionContext else {
             presentError("LogSenseを開くためのURLを作成できませんでした。")
-            return
-        }
-
-        guard let context = extensionContext else {
-            presentError("共有拡張を完了できませんでした。")
             return
         }
         openCallback(callback, using: context)
@@ -237,106 +286,6 @@ final class ShareViewController: UIViewController {
         let df = DateFormatter()
         df.dateFormat = "yyyy-MM-dd"
         return df.string(from: Date())
-    }
-
-    private func uploadImage(
-        data: Data,
-        token: String,
-        completion: @escaping (Result<String, GyazoUploadError>) -> Void
-    ) {
-        let boundary = UUID().uuidString
-        var req = URLRequest(url: URL(string: "https://upload.gyazo.com/api/upload")!)
-        req.httpMethod = "POST"
-        req.timeoutInterval = 60
-        req.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
-
-        let temporaryURL = FileManager.default.temporaryDirectory
-            .appendingPathComponent("logsense-\(UUID().uuidString).multipart")
-        do {
-            guard FileManager.default.createFile(atPath: temporaryURL.path, contents: nil) else {
-                completion(.failure(.requestPreparation))
-                return
-            }
-            let file = try FileHandle(forWritingTo: temporaryURL)
-            defer { try? file.close() }
-
-            func write(_ string: String) throws {
-                try file.write(contentsOf: Data(string.utf8))
-            }
-
-            try write("--\(boundary)\r\n")
-            try write("Content-Disposition: form-data; name=\"access_token\"\r\n\r\n")
-            try write("\(token)\r\n")
-            try write("--\(boundary)\r\n")
-            try write("Content-Disposition: form-data; name=\"imagedata\"; filename=\"image.jpg\"\r\n")
-            try write("Content-Type: image/jpeg\r\n\r\n")
-            try file.write(contentsOf: data)
-            try write("\r\n")
-            try write("--\(boundary)--\r\n")
-            try FileManager.default.setAttributes(
-                [.protectionKey: FileProtectionType.complete],
-                ofItemAtPath: temporaryURL.path
-            )
-        } catch {
-            try? FileManager.default.removeItem(at: temporaryURL)
-            completion(.failure(.requestPreparation))
-            return
-        }
-
-        URLSession.shared.uploadTask(with: req, fromFile: temporaryURL) { data, response, error in
-            defer { try? FileManager.default.removeItem(at: temporaryURL) }
-            if let error = error {
-                LogSenseLogger.debug("[ShareExt] upload error=\(error.localizedDescription)")
-                completion(.failure(.network(error)))
-                return
-            }
-
-            guard let httpResponse = response as? HTTPURLResponse else {
-                completion(.failure(.invalidResponse))
-                return
-            }
-
-            let json = data.flatMap {
-                try? JSONSerialization.jsonObject(with: $0) as? [String: Any]
-            }
-            guard (200..<300).contains(httpResponse.statusCode) else {
-                let message = json?["message"] as? String
-                completion(.failure(.server(statusCode: httpResponse.statusCode, message: message)))
-                return
-            }
-
-            guard let urlString = json?["url"] as? String,
-                  let imageURL = URL(string: urlString),
-                  imageURL.scheme?.lowercased() == "https" else {
-                LogSenseLogger.debug("[ShareExt] upload failed to parse response")
-                completion(.failure(.invalidImageURL))
-                return
-            }
-            LogSenseLogger.debug("[ShareExt] upload success URL=\(urlString)")
-            completion(.success(urlString))
-        }.resume()
-    }
-
-    private func makeScrapboxURLForImage(project: String,
-                                         page: String,
-                                         imageURL: String,
-                                         camera: String?,
-                                         lens: String?) -> URL? {
-        var body = "[\(imageURL)]"
-
-        let cam = camera?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        let len = lens?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-
-        let parts: [String] = [
-            cam.isEmpty ? nil : "[\(cam)]",
-            len.isEmpty ? nil : "[\(len)]"
-        ].compactMap { $0 }
-
-        if !parts.isEmpty {
-            body += "\n" + parts.joined(separator: " + ")
-        }
-
-        return ScrapboxURLBuilder.makePageURL(project: project, title: page, body: body)
     }
 
     private func extractPageInfo(from item: NSExtensionItem,

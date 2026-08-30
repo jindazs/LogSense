@@ -83,4 +83,96 @@ final class CTDTests: XCTestCase {
         XCTAssertNil(ImageMetadataReader.normalizedDate("not-a-date"))
         XCTAssertNil(ImageMetadataReader.normalizedDate(nil))
     }
+
+    @MainActor
+    func testWebViewModelCreatesWebViewOnlyWhenDisplayed() {
+        let model = WebViewModel(url: URL(string: "about:blank")!)
+
+        XCTAssertFalse(model.isWebViewCreated)
+        model.loadURL(URL(string: "about:blank")!)
+        XCTAssertFalse(model.isWebViewCreated)
+
+        _ = model.webViewForDisplay()
+        XCTAssertTrue(model.isWebViewCreated)
+    }
+
+    @MainActor
+    func testInputAccessoryViewIsReused() {
+        let webView = CustomWebView()
+
+        XCTAssertTrue(webView.inputAccessoryView === webView.inputAccessoryView)
+    }
+
+    func testPhotoImportBodyBuilderGroupsByDateAndPreservesSelectionOrder() {
+        let items = [
+            makeUploadedPhoto(index: 2, date: "2026-07-21", url: "https://i.gyazo.com/3.jpg"),
+            makeUploadedPhoto(index: 0, date: "2026-07-20", url: "https://i.gyazo.com/1.jpg"),
+            makeUploadedPhoto(index: 1, date: "2026-07-20", url: "https://i.gyazo.com/2.jpg")
+        ]
+
+        let appends = PhotoImportBodyBuilder.makeAppends(from: items)
+
+        XCTAssertEqual(appends.map(\.pageTitle), ["2026-07-20", "2026-07-21"])
+        XCTAssertTrue(appends[0].body.contains("[https://i.gyazo.com/1.jpg]"))
+        XCTAssertTrue(appends[0].body.contains("[https://i.gyazo.com/2.jpg]"))
+        XCTAssertLessThan(
+            try XCTUnwrap(appends[0].body.range(of: "1.jpg")?.lowerBound),
+            try XCTUnwrap(appends[0].body.range(of: "2.jpg")?.lowerBound)
+        )
+    }
+
+    func testPhotoImportBodyBuilderChunksLargeSameDayBatch() {
+        let items = (0..<5).map {
+            makeUploadedPhoto(
+                index: $0,
+                date: "2026-07-20",
+                url: "https://i.gyazo.com/\($0).jpg"
+            )
+        }
+
+        let appends = PhotoImportBodyBuilder.makeAppends(
+            from: items,
+            maximumImagesPerAppend: 2
+        )
+
+        XCTAssertEqual(appends.count, 3)
+        XCTAssertEqual(appends.map(\.itemIDs.count), [2, 2, 1])
+    }
+
+    func testPhotoImportStoreRoundTrip() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("LogSenseTests-\(UUID().uuidString)", isDirectory: true)
+        addTeardownBlock {
+            try? FileManager.default.removeItem(at: root)
+        }
+        let store = PhotoImportStore(rootURL: root)
+        let batch = PhotoImportBatch(
+            id: UUID(),
+            destination: .photo,
+            projectName: "jindazs",
+            createdAt: Date(timeIntervalSince1970: 1_700_000_000),
+            items: [makeUploadedPhoto(index: 0, date: "2026-07-20", url: "https://i.gyazo.com/1.jpg")],
+            state: .awaitingDecision
+        )
+
+        try store.save(batch)
+        let loaded = try store.load(batch.id)
+
+        XCTAssertEqual(loaded, batch)
+    }
+
+    private func makeUploadedPhoto(index: Int, date: String, url: String) -> PhotoImportItem {
+        PhotoImportItem(
+            id: UUID(),
+            originalIndex: index,
+            localFilename: "\(index).jpg",
+            capturedDate: date,
+            camera: "Camera",
+            lens: "Lens",
+            state: .uploaded,
+            gyazoURL: url,
+            attemptCount: 1,
+            errorMessage: nil
+        )
+    }
 }
