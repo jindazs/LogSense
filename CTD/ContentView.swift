@@ -269,12 +269,6 @@ struct ContentView: View {
                 }
             }
             .padding(.bottom, 8)
-
-            if photoImportCoordinator.isPresented {
-                PhotoImportProgressView(coordinator: photoImportCoordinator)
-                    .padding(.horizontal, 24)
-                    .padding(.bottom, 72)
-            }
         }
         .onAppear {
             projectName = groupDefaults.string(forKey: UserDefaultsKeys.projectName) ?? ""
@@ -739,47 +733,57 @@ struct PhotoImportQueueView: View {
 
     var body: some View {
         NavigationView {
-            Group {
-                if coordinator.pendingBatches.isEmpty {
-                    VStack(spacing: 12) {
-                        Image(systemName: "tray")
-                            .font(.largeTitle)
-                            .foregroundColor(.secondary)
-                        Text("未完了のアップロードはありません")
-                            .foregroundColor(.secondary)
-                    }
-                } else {
-                    List(coordinator.pendingBatches) { batch in
-                        HStack {
-                            Button {
-                                dismiss()
-                                onSelect(batch.id)
-                            } label: {
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text(batch.projectName)
-                                        .font(.headline)
-                                    Text(queueDescription(for: batch))
-                                        .font(.caption)
-                                        .foregroundColor(.secondary)
-                                }
-                                Spacer()
-                                if coordinator.batch?.id == batch.id && coordinator.isWorking {
-                                    ProgressView()
-                                } else {
-                                    Image(systemName: "chevron.right")
-                                        .foregroundColor(.secondary)
-                                }
-                            }
-                            .buttonStyle(.plain)
-                            .disabled(coordinator.isWorking && coordinator.batch?.id != batch.id)
+            VStack(spacing: 0) {
+                if coordinator.isPresented {
+                    PhotoImportProgressView(coordinator: coordinator)
+                        .padding()
+                }
 
-                            if !coordinator.isWorking || coordinator.batch?.id != batch.id {
-                                Button(role: .destructive) {
-                                    batchToDelete = batch
+                Group {
+                    if coordinator.pendingBatches.isEmpty {
+                        VStack(spacing: 12) {
+                            Image(systemName: "tray")
+                                .font(.largeTitle)
+                                .foregroundColor(.secondary)
+                            Text("未完了のアップロードはありません")
+                                .foregroundColor(.secondary)
+                        }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    } else {
+                        List(coordinator.pendingBatches) { batch in
+                            HStack {
+                                Button {
+                                    onSelect(batch.id)
                                 } label: {
-                                    Image(systemName: "trash")
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text(batch.projectName)
+                                            .font(.headline)
+                                        Text(queueDescription(for: batch))
+                                            .font(.caption)
+                                            .foregroundColor(.secondary)
+                                    }
+                                    Spacer()
+                                    if coordinator.batch?.id == batch.id && coordinator.isWorking {
+                                        ProgressView()
+                                    } else {
+                                        Image(systemName: "chevron.right")
+                                            .foregroundColor(.secondary)
+                                    }
                                 }
-                                .buttonStyle(.borderless)
+                                .buttonStyle(.plain)
+                                .disabled(
+                                    coordinator.isPresented && coordinator.batch?.id == batch.id
+                                        || coordinator.isWorking && coordinator.batch?.id != batch.id
+                                )
+
+                                if !coordinator.isWorking || coordinator.batch?.id != batch.id {
+                                    Button(role: .destructive) {
+                                        batchToDelete = batch
+                                    } label: {
+                                        Image(systemName: "trash")
+                                    }
+                                    .buttonStyle(.borderless)
+                                }
                             }
                         }
                     }
