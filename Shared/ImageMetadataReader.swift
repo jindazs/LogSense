@@ -9,9 +9,22 @@ struct ImageMetadata: Equatable {
 
 enum ImageMetadataReader {
     static func read(from data: Data) -> ImageMetadata {
-        guard let source = CGImageSourceCreateWithData(data as CFData, nil),
-              let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil)
-                as? [CFString: Any] else {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil) else {
+            return ImageMetadata(date: nil, cameraModel: nil, lensModel: nil)
+        }
+        return read(from: source)
+    }
+
+    static func read(from url: URL) -> ImageMetadata {
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else {
+            return ImageMetadata(date: nil, cameraModel: nil, lensModel: nil)
+        }
+        return read(from: source)
+    }
+
+    private static func read(from source: CGImageSource) -> ImageMetadata {
+        guard let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil)
+            as? [CFString: Any] else {
             return ImageMetadata(date: nil, cameraModel: nil, lensModel: nil)
         }
 

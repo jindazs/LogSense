@@ -84,6 +84,19 @@ final class CTDTests: XCTestCase {
         XCTAssertNil(ImageMetadataReader.normalizedDate(nil))
     }
 
+    func testImageMetadataReaderReadsFromFileWithoutLoadingDataFirst() throws {
+        let image = UIGraphicsImageRenderer(size: CGSize(width: 2, height: 2)).image { context in
+            UIColor.blue.setFill()
+            context.cgContext.fill(CGRect(x: 0, y: 0, width: 2, height: 2))
+        }
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("LogSenseMetadata-\(UUID().uuidString).jpg")
+        try XCTUnwrap(image.jpegData(compressionQuality: 1)).write(to: url)
+        addTeardownBlock { try? FileManager.default.removeItem(at: url) }
+
+        XCTAssertEqual(ImageMetadataReader.read(from: url), ImageMetadata(date: nil, cameraModel: nil, lensModel: nil))
+    }
+
     @MainActor
     func testWebViewModelCreatesWebViewOnlyWhenDisplayed() {
         let model = WebViewModel(url: URL(string: "about:blank")!)
@@ -161,6 +174,64 @@ final class CTDTests: XCTestCase {
         XCTAssertEqual(loaded, batch)
     }
 
+    func testPhotoImportStoreRecoversCopiedItemsAfterStagingInterruption() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("LogSenseTests-\(UUID().uuidString)", isDirectory: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let store = PhotoImportStore(rootURL: root)
+        let batch = PhotoImportBatch(
+            id: UUID(),
+            destination: .photo,
+            projectName: "photos",
+            createdAt: Date(),
+            items: [makeStagedPhoto(index: 0)],
+            state: .staging
+        )
+        try store.save(batch)
+
+        let recovered = try store.recoverInterruptedStaging(batch.id)
+
+        XCTAssertEqual(recovered.state, .staged)
+        XCTAssertEqual(recovered.items.count, 1)
+    }
+
+    func testPhotoImportStoreDropsEmptyInterruptedStagingBatch() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("LogSenseTests-\(UUID().uuidString)", isDirectory: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let store = PhotoImportStore(rootURL: root)
+        let batch = PhotoImportBatch(
+            id: UUID(),
+            destination: .photo,
+            projectName: "photos",
+            createdAt: Date(),
+            items: [],
+            state: .staging
+        )
+        try store.save(batch)
+
+        XCTAssertThrowsError(try store.recoverInterruptedStaging(batch.id))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent(batch.id.uuidString).path))
+    }
+
+    func testPendingBatchesIncludesPausedWork() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("LogSenseTests-\(UUID().uuidString)", isDirectory: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let store = PhotoImportStore(rootURL: root)
+        let batch = PhotoImportBatch(
+            id: UUID(),
+            destination: .primary,
+            projectName: "main",
+            createdAt: Date(),
+            items: [makeStagedPhoto(index: 0)],
+            state: .paused
+        )
+        try store.save(batch)
+
+        XCTAssertEqual(store.pendingBatches().map(\.id), [batch.id])
+    }
+
     private func makeUploadedPhoto(index: Int, date: String, url: String) -> PhotoImportItem {
         PhotoImportItem(
             id: UUID(),
@@ -172,6 +243,21 @@ final class CTDTests: XCTestCase {
             state: .uploaded,
             gyazoURL: url,
             attemptCount: 1,
+            errorMessage: nil
+        )
+    }
+
+    private func makeStagedPhoto(index: Int) -> PhotoImportItem {
+        PhotoImportItem(
+            id: UUID(),
+            originalIndex: index,
+            localFilename: "\(index).heic",
+            capturedDate: "2026-09-03",
+            camera: nil,
+            lens: nil,
+            state: .staged,
+            gyazoURL: nil,
+            attemptCount: 0,
             errorMessage: nil
         )
     }

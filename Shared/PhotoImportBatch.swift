@@ -20,8 +20,10 @@ enum PhotoImportItemState: String, Codable {
 }
 
 enum PhotoImportBatchState: String, Codable {
+    case staging
     case staged
     case uploading
+    case paused
     case awaitingDecision
     case committing
     case commitUncertain
@@ -187,6 +189,18 @@ struct PhotoImportStore {
             .compactMap { try? load($0) }
             .filter { $0.state != .completed }
             .sorted { $0.createdAt > $1.createdAt }
+    }
+
+    func recoverInterruptedStaging(_ batchID: UUID) throws -> PhotoImportBatch {
+        var batch = try load(batchID)
+        guard batch.state == .staging else { return batch }
+        guard !batch.items.isEmpty else {
+            try remove(batchID)
+            throw PhotoImportStoreError.invalidBatch
+        }
+        batch.state = .staged
+        try save(batch)
+        return batch
     }
 
     func remove(_ batchID: UUID, fileManager: FileManager = .default) throws {

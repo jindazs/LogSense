@@ -1,8 +1,10 @@
 import Foundation
+import UIKit
 
 @MainActor
 final class PhotoImportCoordinator: ObservableObject {
     @Published private(set) var batch: PhotoImportBatch?
+    @Published private(set) var pendingBatches: [PhotoImportBatch] = []
     @Published private(set) var statusMessage = ""
     @Published private(set) var isPresented = false
     @Published private(set) var isWorking = false
@@ -10,6 +12,7 @@ final class PhotoImportCoordinator: ObservableObject {
     private var token = ""
     private var store: PhotoImportStore?
     private var commitHandler: (([PhotoImportAppend], @escaping (Bool) -> Void) -> Void)?
+    private var uploadTask: Task<Void, Never>?
 
     var progress: Double {
         guard let batch, !batch.items.isEmpty else { return 0 }
@@ -17,6 +20,14 @@ final class PhotoImportCoordinator: ObservableObject {
             $0.state == .uploaded || $0.state == .failed || $0.state == .committed
         }.count
         return Double(finished) / Double(batch.items.count)
+    }
+
+    var canPause: Bool {
+        isWorking && batch?.state == .uploading
+    }
+
+    var canResume: Bool {
+        !isWorking && batch?.state == .paused
     }
 
     var canRetry: Bool {
@@ -31,55 +42,96 @@ final class PhotoImportCoordinator: ObservableObject {
             && (batch?.items.contains { $0.state == .uploaded } ?? false)
     }
 
+    var canDiscard: Bool {
+        !isWorking && batch?.state != .committing
+    }
+
+    func refreshQueue() {
+        guard let store = try? PhotoImportStore.shared() else {
+            pendingBatches = []
+            return
+        }
+        self.store = store
+        pendingBatches = store.pendingBatches()
+    }
+
     func start(
         batchID: UUID,
         token: String,
         commitHandler: @escaping ([PhotoImportAppend], @escaping (Bool) -> Void) -> Void
     ) {
+        guard !isWorking || batch?.id == batchID else {
+            statusMessage = "現在のアップロードを一時停止してから別の項目を開いてください。"
+            return
+        }
         do {
             let store = try PhotoImportStore.shared()
-            var batch = try store.load(batchID)
+            var batch = try store.recoverInterruptedStaging(batchID)
             if batch.state == .completed {
                 self.store = store
                 self.batch = batch
                 statusMessage = "\(batch.items.count)枚を追加しました。"
                 isPresented = true
                 isWorking = false
+                refreshQueue()
                 return
             }
+            self.store = store
+            self.batch = batch
+            self.token = token
+            self.commitHandler = commitHandler
+            isPresented = true
+
             if token.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                self.store = store
-                self.batch = batch
                 statusMessage = "Gyazo Tokenを設定してから再試行してください。"
-                isPresented = true
                 isWorking = false
+                refreshQueue()
                 return
             }
             if batch.state == .committing || batch.state == .commitUncertain {
                 batch.state = .commitUncertain
                 try store.save(batch)
-                self.store = store
                 self.batch = batch
                 statusMessage = "Cosenseへの追加結果を確認できませんでした。ページを確認してください。"
-                isPresented = true
                 isWorking = false
+                refreshQueue()
+                return
+            }
+            if batch.state == .paused {
+                statusMessage = "アップロードを一時停止しています。"
+                isWorking = false
+                refreshQueue()
                 return
             }
             for index in batch.items.indices where batch.items[index].state == .uploading {
                 batch.items[index].state = .staged
             }
             try store.save(batch)
-            self.store = store
             self.batch = batch
-            self.token = token
-            self.commitHandler = commitHandler
-            isPresented = true
+            refreshQueue()
             uploadPendingItems()
         } catch {
             statusMessage = error.localizedDescription
             isPresented = true
             isWorking = false
+            refreshQueue()
         }
+    }
+
+    func pause() {
+        guard canPause else { return }
+        statusMessage = "アップロードを一時停止しています…"
+        uploadTask?.cancel()
+    }
+
+    func resume() {
+        guard var batch, canResume else { return }
+        for index in batch.items.indices where batch.items[index].state == .uploading {
+            batch.items[index].state = .staged
+        }
+        batch.state = .staged
+        persist(batch)
+        uploadPendingItems()
     }
 
     func retryFailedItems() {
@@ -88,6 +140,7 @@ final class PhotoImportCoordinator: ObservableObject {
             batch.items[index].state = .staged
             batch.items[index].errorMessage = nil
         }
+        batch.state = .staged
         persist(batch)
         uploadPendingItems()
     }
@@ -133,6 +186,28 @@ final class PhotoImportCoordinator: ObservableObject {
             try? store?.remove(batchID)
         }
         isPresented = false
+        refreshQueue()
+    }
+
+    func discardCurrentBatch() {
+        guard canDiscard, let batchID = batch?.id else { return }
+        discard(batchID: batchID)
+    }
+
+    func discard(batchID: UUID) {
+        guard !isWorking || batch?.id != batchID else { return }
+        do {
+            let store = try PhotoImportStore.shared()
+            try store.remove(batchID)
+            if batch?.id == batchID {
+                batch = nil
+                isPresented = false
+                statusMessage = ""
+            }
+            refreshQueue()
+        } catch {
+            statusMessage = "アップロード項目を破棄できませんでした。\(error.localizedDescription)"
+        }
     }
 
     private func uploadPendingItems() {
@@ -153,8 +228,10 @@ final class PhotoImportCoordinator: ObservableObject {
         statusMessage = "Gyazoへアップロードしています…"
 
         let token = token
-        Task {
+        uploadTask = Task { [weak self] in
+            guard let self else { return }
             for start in stride(from: 0, to: indices.count, by: 2) {
+                guard !Task.isCancelled else { break }
                 let pair = Array(indices[start..<min(start + 2, indices.count)])
                 await withTaskGroup(of: (Int, Result<String, Error>).self) { group in
                     for index in pair {
@@ -163,7 +240,10 @@ final class PhotoImportCoordinator: ObservableObject {
                         let fileURL = store.imageURL(batchID: current.id, filename: item.localFilename)
                         group.addTask {
                             do {
-                                let url = try await GyazoBatchUploader.upload(fileURL: fileURL, token: token)
+                                let url = try await GyazoBatchUploader.uploadWithRetry(
+                                    fileURL: fileURL,
+                                    token: token
+                                )
                                 return (index, .success(url))
                             } catch {
                                 return (index, .failure(error))
@@ -178,6 +258,9 @@ final class PhotoImportCoordinator: ObservableObject {
                             current.items[index].gyazoURL = url
                             current.items[index].state = .uploaded
                             current.items[index].errorMessage = nil
+                        case .failure(let error) where error.isCancellation:
+                            current.items[index].state = .staged
+                            current.items[index].errorMessage = nil
                         case .failure(let error):
                             current.items[index].state = .failed
                             current.items[index].errorMessage = error.localizedDescription
@@ -186,8 +269,25 @@ final class PhotoImportCoordinator: ObservableObject {
                     }
                 }
             }
-            finishUploading()
+
+            if Task.isCancelled {
+                self.finishPausing()
+            } else {
+                self.finishUploading()
+            }
+            self.uploadTask = nil
         }
+    }
+
+    private func finishPausing() {
+        guard var batch else { return }
+        for index in batch.items.indices where batch.items[index].state == .uploading {
+            batch.items[index].state = .staged
+        }
+        batch.state = .paused
+        isWorking = false
+        persist(batch)
+        statusMessage = "アップロードを一時停止しました。"
     }
 
     private func finishUploading() {
@@ -207,15 +307,23 @@ final class PhotoImportCoordinator: ObservableObject {
         batch = updated
         do {
             try store?.save(updated)
+            refreshQueue()
         } catch {
             statusMessage = "進捗を保存できませんでした。\(error.localizedDescription)"
         }
     }
 }
 
+private extension Error {
+    var isCancellation: Bool {
+        self is CancellationError || (self as? URLError)?.code == .cancelled
+    }
+}
+
 private enum GyazoBatchUploadError: LocalizedError {
     case invalidResponse
     case server(Int)
+    case invalidImage
     case invalidImageURL
 
     var errorDescription: String? {
@@ -224,14 +332,48 @@ private enum GyazoBatchUploadError: LocalizedError {
             return "Gyazoから不正な応答を受信しました。"
         case .server(let status):
             return "Gyazoへのアップロードに失敗しました（HTTP \(status)）。"
+        case .invalidImage:
+            return "画像をJPEGへ変換できませんでした。"
         case .invalidImageURL:
             return "Gyazoの応答に画像URLがありませんでした。"
         }
     }
 }
 
+private struct PreparedUploadFile {
+    let url: URL
+    let shouldRemove: Bool
+}
+
 private enum GyazoBatchUploader {
-    static func upload(fileURL: URL, token: String) async throws -> String {
+    static func uploadWithRetry(fileURL: URL, token: String, maximumAttempts: Int = 3) async throws -> String {
+        var attempt = 0
+        while true {
+            try Task.checkCancellation()
+            attempt += 1
+            do {
+                return try await upload(fileURL: fileURL, token: token)
+            } catch {
+                guard !error.isCancellation,
+                      attempt < maximumAttempts,
+                      isRetryable(error) else {
+                    throw error
+                }
+                let delay = UInt64(1 << (attempt - 1)) * 1_000_000_000
+                try await Task.sleep(nanoseconds: delay)
+            }
+        }
+    }
+
+    private static func upload(fileURL: URL, token: String) async throws -> String {
+        let prepared = try prepareJPEG(from: fileURL)
+        defer {
+            if prepared.shouldRemove {
+                try? FileManager.default.removeItem(at: prepared.url)
+            }
+        }
+        try Task.checkCancellation()
+
         let boundary = UUID().uuidString
         let multipartURL = fileURL.deletingLastPathComponent()
             .appendingPathComponent("upload-\(UUID().uuidString).multipart")
@@ -245,9 +387,10 @@ private enum GyazoBatchUploader {
             try handle.write(contentsOf: Data("--\(boundary)\r\n".utf8))
             try handle.write(contentsOf: Data("Content-Disposition: form-data; name=\"imagedata\"; filename=\"image.jpg\"\r\n".utf8))
             try handle.write(contentsOf: Data("Content-Type: image/jpeg\r\n\r\n".utf8))
-            let imageHandle = try FileHandle(forReadingFrom: fileURL)
+            let imageHandle = try FileHandle(forReadingFrom: prepared.url)
             defer { try? imageHandle.close() }
             while let chunk = try imageHandle.read(upToCount: 1_048_576), !chunk.isEmpty {
+                try Task.checkCancellation()
                 try handle.write(contentsOf: chunk)
             }
             try handle.write(contentsOf: Data("\r\n--\(boundary)--\r\n".utf8))
@@ -265,7 +408,9 @@ private enum GyazoBatchUploader {
 
         let configuration = URLSessionConfiguration.default
         configuration.httpMaximumConnectionsPerHost = 2
+        configuration.waitsForConnectivity = true
         let session = URLSession(configuration: configuration)
+        defer { session.finishTasksAndInvalidate() }
         let (data, response) = try await session.upload(for: request, fromFile: multipartURL)
         guard let response = response as? HTTPURLResponse else {
             throw GyazoBatchUploadError.invalidResponse
@@ -279,5 +424,38 @@ private enum GyazoBatchUploader {
             throw GyazoBatchUploadError.invalidImageURL
         }
         return url
+    }
+
+    private static func prepareJPEG(from sourceURL: URL) throws -> PreparedUploadFile {
+        let ext = sourceURL.pathExtension.lowercased()
+        if ext == "jpg" || ext == "jpeg" {
+            return PreparedUploadFile(url: sourceURL, shouldRemove: false)
+        }
+        guard let image = UIImage(contentsOfFile: sourceURL.path),
+              let data = image.jpegData(compressionQuality: 0.9) else {
+            throw GyazoBatchUploadError.invalidImage
+        }
+        let url = sourceURL.deletingLastPathComponent()
+            .appendingPathComponent("prepared-\(UUID().uuidString).jpg")
+        try data.write(to: url, options: [.atomic, .completeFileProtection])
+        return PreparedUploadFile(url: url, shouldRemove: true)
+    }
+
+    private static func isRetryable(_ error: Error) -> Bool {
+        if case GyazoBatchUploadError.server(let status) = error {
+            return status == 429 || (500..<600).contains(status)
+        }
+        guard let urlError = error as? URLError else { return false }
+        return [
+            .timedOut,
+            .cannotFindHost,
+            .cannotConnectToHost,
+            .networkConnectionLost,
+            .dnsLookupFailed,
+            .notConnectedToInternet,
+            .internationalRoamingOff,
+            .callIsActive,
+            .dataNotAllowed
+        ].contains(urlError.code)
     }
 }

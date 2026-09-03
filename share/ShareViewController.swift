@@ -15,12 +15,14 @@ private func groupDefaults() -> UserDefaults {
 }
 
 final class ShareViewController: UIViewController {
-    private let imageProcessingQueue = DispatchQueue(
-        label: "LogSense.ShareExtension.ImageProcessing",
-        qos: .userInitiated
-    )
     private var hasStartedHandlingShare = false
     private var isShowingError = false
+    private var stagingProgress: Progress?
+    private var stagingAlert: UIAlertController?
+    private var stagingBatchID: UUID?
+    private var stagingStore: PhotoImportStore?
+    private let stagingStateLock = NSLock()
+    private var stagingWasCancelled = false
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -137,7 +139,7 @@ final class ShareViewController: UIViewController {
         DispatchQueue.main.async {
             let picker = UIAlertController(
                 title: "共有先を選択",
-                message: "\(providers.count)枚の写真をアップロードします。",
+                message: "\(providers.count)枚の写真をLogSenseへ取り込みます。",
                 preferredStyle: .actionSheet
             )
             picker.addAction(UIAlertAction(title: "メイン：\(primaryProject)", style: .default) { _ in
@@ -171,13 +173,27 @@ final class ShareViewController: UIViewController {
         do {
             let store = try PhotoImportStore.shared()
             _ = try store.createDirectory(for: batchID)
+            let batch = PhotoImportBatch(
+                id: batchID,
+                destination: destination,
+                projectName: projectName,
+                createdAt: Date(),
+                items: [],
+                state: .staging
+            )
+            try store.save(batch)
+            stagingStateLock.lock()
+            stagingWasCancelled = false
+            stagingStateLock.unlock()
+            stagingBatchID = batchID
+            stagingStore = store
+            presentStagingProgress(completed: 0, total: providers.count)
             loadAndStageImage(
                 at: 0,
                 providers: providers,
                 batchID: batchID,
                 destination: destination,
                 projectName: projectName,
-                items: [],
                 store: store
             )
         } catch {
@@ -191,21 +207,25 @@ final class ShareViewController: UIViewController {
         batchID: UUID,
         destination: PhotoImportDestination,
         projectName: String,
-        items: [PhotoImportItem],
         store: PhotoImportStore
     ) {
+        guard !isStagingCancelled else { return }
         guard index < providers.count else {
-            let batch = PhotoImportBatch(
-                id: batchID,
-                destination: destination,
-                projectName: projectName,
-                createdAt: Date(),
-                items: items,
-                state: .staged
-            )
             do {
+                var batch = try store.load(batchID)
+                batch.state = .staged
                 try store.save(batch)
-                openPhotoImport(batchID: batchID)
+                DispatchQueue.main.async {
+                    let openApp = {
+                        self.stagingAlert = nil
+                        self.openPhotoImport(batchID: batchID)
+                    }
+                    if let alert = self.stagingAlert {
+                        alert.dismiss(animated: true, completion: openApp)
+                    } else {
+                        openApp()
+                    }
+                }
             } catch {
                 try? store.remove(batchID)
                 presentError(error.localizedDescription)
@@ -213,42 +233,44 @@ final class ShareViewController: UIViewController {
             return
         }
 
-        _ = providers[index].loadDataRepresentation(
-            forTypeIdentifier: UTType.image.identifier
-        ) { [weak self] data, error in
+        let provider = providers[index]
+        let typeIdentifier = provider.registeredTypeIdentifiers.first {
+            UTType($0)?.conforms(to: .image) == true
+        } ?? UTType.image.identifier
+        stagingProgress = provider.loadFileRepresentation(
+            forTypeIdentifier: typeIdentifier
+        ) { [weak self] sourceURL, error in
             guard let self else { return }
-            guard let data else {
+            self.stagingStateLock.lock()
+            guard !self.stagingWasCancelled else {
+                self.stagingStateLock.unlock()
+                return
+            }
+            defer { self.stagingStateLock.unlock() }
+            guard let sourceURL else {
                 LogSenseLogger.debug("[ShareExt] image \(index) load error=\(String(describing: error))")
                 try? store.remove(batchID)
                 self.presentError("\(index + 1)枚目の画像を読み込めませんでした。")
                 return
             }
 
-            self.imageProcessingQueue.async {
-                autoreleasepool {
-                    let metadata = ImageMetadataReader.read(from: data)
-                    let date = metadata.date ?? self.currentDate()
-                    guard let jpeg = UIImage(data: data)?.jpegData(compressionQuality: 0.9) else {
-                        try? store.remove(batchID)
-                        self.presentError("\(index + 1)枚目の画像を変換できませんでした。")
-                        return
-                    }
-                    let filename = String(format: "%03d-%@.jpg", index, UUID().uuidString)
-                    let fileURL = store.imageURL(batchID: batchID, filename: filename)
-                    do {
-                        try jpeg.write(to: fileURL, options: [.atomic, .completeFileProtection])
-                    } catch {
-                        try? store.remove(batchID)
-                        self.presentError("\(index + 1)枚目の画像を保存できませんでした。")
-                        return
-                    }
-
-                    var nextItems = items
-                    nextItems.append(PhotoImportItem(
+            autoreleasepool {
+                let typeExtension = UTType(typeIdentifier)?.preferredFilenameExtension
+                let sourceExtension = sourceURL.pathExtension.isEmpty ? nil : sourceURL.pathExtension
+                let fileExtension = typeExtension ?? sourceExtension ?? "image"
+                let filename = String(format: "%03d-%@.%@", index, UUID().uuidString, fileExtension)
+                let fileURL = store.imageURL(batchID: batchID, filename: filename)
+                let partialURL = fileURL.appendingPathExtension("partial")
+                do {
+                    try FileManager.default.copyItem(at: sourceURL, to: partialURL)
+                    try FileManager.default.moveItem(at: partialURL, to: fileURL)
+                    let metadata = ImageMetadataReader.read(from: fileURL)
+                    var batch = try store.load(batchID)
+                    batch.items.append(PhotoImportItem(
                         id: UUID(),
                         originalIndex: index,
                         localFilename: filename,
-                        capturedDate: date,
+                        capturedDate: metadata.date ?? self.currentDate(),
                         camera: metadata.cameraModel,
                         lens: metadata.lensModel,
                         state: .staged,
@@ -256,18 +278,65 @@ final class ShareViewController: UIViewController {
                         attemptCount: 0,
                         errorMessage: nil
                     ))
+                    try store.save(batch)
+                } catch {
+                    try? FileManager.default.removeItem(at: partialURL)
+                    try? store.remove(batchID)
+                    guard !self.isStagingCancelled else { return }
+                    self.presentError("\(index + 1)枚目の画像を保存できませんでした。")
+                    return
+                }
+
+                DispatchQueue.main.async {
+                    self.presentStagingProgress(completed: index + 1, total: providers.count)
                     self.loadAndStageImage(
                         at: index + 1,
                         providers: providers,
                         batchID: batchID,
                         destination: destination,
                         projectName: projectName,
-                        items: nextItems,
                         store: store
                     )
                 }
             }
         }
+    }
+
+    private var isStagingCancelled: Bool {
+        stagingStateLock.lock()
+        defer { stagingStateLock.unlock() }
+        return stagingWasCancelled
+    }
+
+    private func presentStagingProgress(completed: Int, total: Int) {
+        DispatchQueue.main.async {
+            if let alert = self.stagingAlert {
+                alert.message = "\(completed) / \(total)枚を保存しました。"
+                return
+            }
+            let alert = UIAlertController(
+                title: "写真を取り込み中",
+                message: "\(completed) / \(total)枚を保存しました。",
+                preferredStyle: .alert
+            )
+            alert.addAction(UIAlertAction(title: "キャンセル", style: .destructive) { _ in
+                self.cancelStaging()
+            })
+            self.stagingAlert = alert
+            self.present(alert, animated: true)
+        }
+    }
+
+    private func cancelStaging() {
+        stagingStateLock.lock()
+        stagingWasCancelled = true
+        stagingStateLock.unlock()
+        stagingProgress?.cancel()
+        if let batchID = stagingBatchID {
+            try? stagingStore?.remove(batchID)
+        }
+        stagingAlert = nil
+        extensionContext?.completeRequest(returningItems: nil)
     }
 
     private func openPhotoImport(batchID: UUID) {
@@ -343,16 +412,23 @@ final class ShareViewController: UIViewController {
         DispatchQueue.main.async { [weak self] in
             guard let self, !self.isShowingError else { return }
             self.isShowingError = true
-
-            let alert = UIAlertController(
-                title: "共有できませんでした",
-                message: message,
-                preferredStyle: .alert
-            )
-            alert.addAction(UIAlertAction(title: "閉じる", style: .default) { _ in
-                self.extensionContext?.completeRequest(returningItems: nil)
-            })
-            self.present(alert, animated: true)
+            let showError = {
+                let alert = UIAlertController(
+                    title: "共有できませんでした",
+                    message: message,
+                    preferredStyle: .alert
+                )
+                alert.addAction(UIAlertAction(title: "閉じる", style: .default) { _ in
+                    self.extensionContext?.completeRequest(returningItems: nil)
+                })
+                self.present(alert, animated: true)
+            }
+            if let stagingAlert = self.stagingAlert {
+                self.stagingAlert = nil
+                stagingAlert.dismiss(animated: true, completion: showError)
+            } else {
+                showError()
+            }
         }
     }
 

@@ -107,12 +107,14 @@ final class WebViewModel: ObservableObject {
 }
 
 struct ContentView: View {
+    @Environment(\.scenePhase) private var scenePhase
     @State private var projectName: String = groupDefaults.string(forKey: UserDefaultsKeys.projectName) ?? ""
     @State private var photoProjectName: String = groupDefaults.string(
         forKey: UserDefaultsKeys.photoProjectName
     ) ?? SharedSettingsKeys.defaultPhotoProjectName
     @State private var gyazoToken: String = GyazoTokenStore.load(migratingFrom: groupDefaults)
     @State private var showSettings: Bool = false
+    @State private var showPhotoQueue: Bool = false
     @State private var settingsDidSave: Bool = false
     @State private var selectedTab: AppTab = .home
     @State private var currentDate = ""
@@ -240,6 +242,30 @@ struct ContentView: View {
                         photoWebViewModel.resetToInitialPage()
                     }
                     Spacer()
+                    Button(action: {
+                        photoImportCoordinator.refreshQueue()
+                        showPhotoQueue = true
+                    }) {
+                        ZStack(alignment: .topTrailing) {
+                            Image(systemName: "tray.full")
+                                .resizable()
+                                .scaledToFit()
+                                .frame(width: 12.5, height: 12.5)
+                                .padding(8)
+                                .background(Circle().fill(Color.white.opacity(0.9)))
+                                .shadow(radius: 4)
+                            if !photoImportCoordinator.pendingBatches.isEmpty {
+                                Text("\(photoImportCoordinator.pendingBatches.count)")
+                                    .font(.system(size: 9, weight: .bold))
+                                    .foregroundColor(.white)
+                                    .padding(4)
+                                    .background(Circle().fill(Color.red))
+                                    .offset(x: 4, y: -4)
+                            }
+                        }
+                    }
+                    .accessibilityLabel("写真アップロードキュー")
+                    Spacer()
                 }
             }
             .padding(.bottom, 8)
@@ -259,6 +285,7 @@ struct ContentView: View {
             dateWebViewModel.updateInitialURL(dateUrl)
             let photoURL = URL(string: "https://scrapbox.io/\(photoProjectName)")!
             photoWebViewModel.updateInitialURL(photoURL)
+            photoImportCoordinator.refreshQueue()
             if !photoImportCoordinator.isPresented,
                let pending = try? PhotoImportStore.shared().pendingBatches().first {
                 beginPhotoImport(batchID: pending.id)
@@ -275,6 +302,16 @@ struct ContentView: View {
                 gyazoToken: $gyazoToken,
                 onSave: { settingsDidSave = true }
             )
+        }
+        .sheet(isPresented: $showPhotoQueue) {
+            PhotoImportQueueView(coordinator: photoImportCoordinator) { batchID in
+                beginPhotoImport(batchID: batchID)
+            }
+        }
+        .onChange(of: scenePhase) { phase in
+            if phase != .active {
+                photoImportCoordinator.pause()
+            }
         }
         .onOpenURL { url in
             handleIncomingURL(url)
@@ -624,6 +661,7 @@ struct SettingsView: View {
 
 struct PhotoImportProgressView: View {
     @ObservedObject var coordinator: PhotoImportCoordinator
+    @State private var confirmDiscard = false
 
     var body: some View {
         VStack(spacing: 12) {
@@ -637,8 +675,19 @@ struct PhotoImportProgressView: View {
                     .font(.caption)
                     .foregroundColor(.secondary)
             }
-            if coordinator.canRetry || coordinator.canCommitSuccesses {
+            if coordinator.canPause {
+                Button("一時停止") {
+                    coordinator.pause()
+                }
+                .buttonStyle(.borderedProminent)
+            }
+            if coordinator.canResume || coordinator.canRetry || coordinator.canCommitSuccesses {
                 HStack {
+                    if coordinator.canResume {
+                        Button("再開") {
+                            coordinator.resume()
+                        }
+                    }
                     if coordinator.canRetry {
                         Button("失敗分を再試行") {
                             coordinator.retryFailedItems()
@@ -653,8 +702,15 @@ struct PhotoImportProgressView: View {
                 .buttonStyle(.bordered)
             }
             if !coordinator.isWorking {
-                Button("閉じる") {
-                    coordinator.close()
+                HStack {
+                    Button("閉じる") {
+                        coordinator.close()
+                    }
+                    if coordinator.canDiscard {
+                        Button("破棄", role: .destructive) {
+                            confirmDiscard = true
+                        }
+                    }
                 }
                 .font(.caption)
             }
@@ -662,6 +718,107 @@ struct PhotoImportProgressView: View {
         .padding()
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
         .shadow(radius: 8)
+        .confirmationDialog(
+            "このアップロードを破棄しますか？",
+            isPresented: $confirmDiscard,
+            titleVisibility: .visible
+        ) {
+            Button("画像と進捗を削除", role: .destructive) {
+                coordinator.discardCurrentBatch()
+            }
+            Button("キャンセル", role: .cancel) {}
+        }
+    }
+}
+
+struct PhotoImportQueueView: View {
+    @Environment(\.dismiss) private var dismiss
+    @ObservedObject var coordinator: PhotoImportCoordinator
+    let onSelect: (UUID) -> Void
+    @State private var batchToDelete: PhotoImportBatch?
+
+    var body: some View {
+        NavigationView {
+            Group {
+                if coordinator.pendingBatches.isEmpty {
+                    VStack(spacing: 12) {
+                        Image(systemName: "tray")
+                            .font(.largeTitle)
+                            .foregroundColor(.secondary)
+                        Text("未完了のアップロードはありません")
+                            .foregroundColor(.secondary)
+                    }
+                } else {
+                    List(coordinator.pendingBatches) { batch in
+                        HStack {
+                            Button {
+                                dismiss()
+                                onSelect(batch.id)
+                            } label: {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(batch.projectName)
+                                        .font(.headline)
+                                    Text(queueDescription(for: batch))
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                }
+                                Spacer()
+                                if coordinator.batch?.id == batch.id && coordinator.isWorking {
+                                    ProgressView()
+                                } else {
+                                    Image(systemName: "chevron.right")
+                                        .foregroundColor(.secondary)
+                                }
+                            }
+                            .buttonStyle(.plain)
+                            .disabled(coordinator.isWorking && coordinator.batch?.id != batch.id)
+
+                            if !coordinator.isWorking || coordinator.batch?.id != batch.id {
+                                Button(role: .destructive) {
+                                    batchToDelete = batch
+                                } label: {
+                                    Image(systemName: "trash")
+                                }
+                                .buttonStyle(.borderless)
+                            }
+                        }
+                    }
+                }
+            }
+            .navigationTitle("写真アップロード")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("閉じる") { dismiss() }
+                }
+            }
+        }
+        .onAppear { coordinator.refreshQueue() }
+        .alert(item: $batchToDelete) { batch in
+            Alert(
+                title: Text("アップロードを破棄しますか？"),
+                message: Text("保存済みの画像と進捗を削除します。"),
+                primaryButton: .destructive(Text("破棄")) {
+                    coordinator.discard(batchID: batch.id)
+                },
+                secondaryButton: .cancel()
+            )
+        }
+    }
+
+    private func queueDescription(for batch: PhotoImportBatch) -> String {
+        let state: String
+        switch batch.state {
+        case .staging: state = "取り込み中断"
+        case .staged: state = "待機中"
+        case .uploading: state = "アップロード中"
+        case .paused: state = "一時停止"
+        case .awaitingDecision: state = "確認待ち"
+        case .committing: state = "Cosenseへ追加中"
+        case .commitUncertain: state = "追加結果の確認が必要"
+        case .completed: state = "完了"
+        case .failed: state = "失敗"
+        }
+        return "\(batch.uploadedCount + batch.failedCount) / \(batch.items.count)枚・\(state)"
     }
 }
 
