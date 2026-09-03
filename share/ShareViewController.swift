@@ -50,8 +50,8 @@ final class ShareViewController: UIViewController {
             .filter { $0.hasItemConformingToTypeIdentifier(UTType.image.identifier) } ?? []
         if !imageProviders.isEmpty {
             LogSenseLogger.debug("[ShareExt] found \(imageProviders.count) image attachments")
-            guard imageProviders.count <= 10 else {
-                presentError("一度に共有できる写真は10枚までです。")
+            guard imageProviders.count <= 20 else {
+                presentError("一度に共有できる写真は20枚までです。")
                 return
             }
             presentPhotoDestinationPicker(providers: imageProviders)
