@@ -17,7 +17,10 @@ final class PhotoImportCoordinator: ObservableObject {
     var progress: Double {
         guard let batch, !batch.items.isEmpty else { return 0 }
         let finished = batch.items.filter {
-            $0.state == .uploaded || $0.state == .failed || $0.state == .committed
+            $0.state == .uploaded
+                || $0.state == .failed
+                || $0.state == .committed
+                || $0.state == .skipped
         }.count
         return Double(finished) / Double(batch.items.count)
     }
@@ -70,7 +73,7 @@ final class PhotoImportCoordinator: ObservableObject {
             if batch.state == .completed {
                 self.store = store
                 self.batch = batch
-                statusMessage = "\(batch.items.count)枚を追加しました。"
+                statusMessage = batch.completionMessage
                 isPresented = true
                 isWorking = false
                 refreshQueue()
@@ -170,8 +173,8 @@ final class PhotoImportCoordinator: ObservableObject {
                     current.state = current.failedCount == 0 ? .completed : .awaitingDecision
                     self.persist(current)
                     self.statusMessage = current.failedCount == 0
-                        ? "\(current.items.count)枚を追加しました。"
-                        : "\(current.uploadedCount)枚を追加しました。\(current.failedCount)枚は未完了です。"
+                        ? current.completionMessage
+                        : self.incompleteMessage(for: current)
                 } else {
                     current.state = .commitUncertain
                     self.persist(current)
@@ -212,7 +215,38 @@ final class PhotoImportCoordinator: ObservableObject {
 
     private func uploadPendingItems() {
         guard var batch, let store else { return }
-        let indices = batch.items.indices.filter { batch.items[$0].state == .staged }
+        let historyStore = try? PhotoUploadHistoryStore.shared()
+        var knownHashes = Set<String>(
+            batch.items.compactMap { item in
+                guard item.state == .uploaded || item.state == .committed else { return nil }
+                return item.contentHash
+            }
+        )
+        var indices: [Int] = []
+        for index in batch.items.indices where batch.items[index].state == .staged {
+            let fileURL = store.imageURL(batchID: batch.id, filename: batch.items[index].localFilename)
+            do {
+                if batch.items[index].contentHash == nil || batch.items[index].byteSize == nil {
+                    let fingerprint = try ImageFingerprint.make(from: fileURL)
+                    batch.items[index].contentHash = fingerprint.sha256
+                    batch.items[index].byteSize = fingerprint.byteSize
+                }
+                guard let contentHash = batch.items[index].contentHash else {
+                    throw PhotoImportStoreError.invalidBatch
+                }
+                if knownHashes.contains(contentHash) || historyStore?.record(for: contentHash) != nil {
+                    batch.items[index].state = .skipped
+                    try? FileManager.default.removeItem(at: fileURL)
+                } else {
+                    knownHashes.insert(contentHash)
+                    indices.append(index)
+                }
+            } catch {
+                batch.items[index].state = .failed
+                batch.items[index].errorMessage = "画像の識別情報を作成できませんでした。\(error.localizedDescription)"
+            }
+        }
+        persist(batch)
         guard !indices.isEmpty else {
             finishUploading()
             return
@@ -244,6 +278,24 @@ final class PhotoImportCoordinator: ObservableObject {
                                     fileURL: fileURL,
                                     token: token
                                 )
+                                if let contentHash = item.contentHash,
+                                   let byteSize = item.byteSize {
+                                    do {
+                                        let historyStore = try PhotoUploadHistoryStore.shared()
+                                        try historyStore.save(UploadedPhotoRecord(
+                                            contentHash: contentHash,
+                                            byteSize: byteSize,
+                                            originalFilename: item.originalFilename,
+                                            gyazoURL: url,
+                                            capturedDate: item.capturedDate,
+                                            uploadedAt: Date()
+                                        ))
+                                    } catch {
+                                        LogSenseLogger.debug(
+                                            "[LogSense] upload history save failed: \(error.localizedDescription)"
+                                        )
+                                    }
+                                }
                                 return (index, .success(url))
                             } catch {
                                 return (index, .failure(error))
@@ -294,13 +346,28 @@ final class PhotoImportCoordinator: ObservableObject {
         guard var batch else { return }
         isWorking = false
         if batch.failedCount == 0 {
-            persist(batch)
-            commitSuccessfulItems()
+            if batch.items.contains(where: { $0.state == .uploaded }) {
+                persist(batch)
+                commitSuccessfulItems()
+            } else {
+                batch.state = .completed
+                persist(batch)
+                statusMessage = batch.completionMessage
+            }
         } else {
             batch.state = .awaitingDecision
             persist(batch)
-            statusMessage = "\(batch.items.count)枚中\(batch.uploadedCount)枚をアップロードしました。\(batch.failedCount)枚に失敗しました。"
+            statusMessage = incompleteMessage(for: batch)
         }
+    }
+
+    private func incompleteMessage(for batch: PhotoImportBatch) -> String {
+        var parts = ["\(batch.uploadedCount)枚をアップロードしました。"]
+        if batch.skippedCount > 0 {
+            parts.append("\(batch.skippedCount)枚の重複をスキップしました。")
+        }
+        parts.append("\(batch.failedCount)枚に失敗しました。")
+        return parts.joined()
     }
 
     private func persist(_ updated: PhotoImportBatch) {

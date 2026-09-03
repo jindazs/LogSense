@@ -152,6 +152,67 @@ final class CTDTests: XCTestCase {
         XCTAssertEqual(appends.map(\.itemIDs.count), [2, 2, 1])
     }
 
+    func testPhotoImportBodyBuilderExcludesSkippedDuplicates() {
+        let uploaded = makeUploadedPhoto(index: 0, date: "2026-07-20", url: "https://i.gyazo.com/1.jpg")
+        var skipped = makeStagedPhoto(index: 1)
+        skipped.state = .skipped
+        let batch = PhotoImportBatch(
+            id: UUID(),
+            destination: .photo,
+            projectName: "photos",
+            createdAt: Date(),
+            items: [uploaded, skipped],
+            state: .completed
+        )
+
+        let appends = PhotoImportBodyBuilder.makeAppends(from: batch.items)
+
+        XCTAssertEqual(appends.count, 1)
+        XCTAssertEqual(appends[0].itemIDs, [uploaded.id])
+        XCTAssertEqual(batch.skippedCount, 1)
+        XCTAssertEqual(batch.processedCount, 2)
+        XCTAssertEqual(batch.completionMessage, "1枚を追加し、1枚の重複をスキップしました。")
+    }
+
+    func testImageFingerprintDetectsExactDuplicates() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("LogSenseFingerprintTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let first = directory.appendingPathComponent("first.heic")
+        let renamedCopy = directory.appendingPathComponent("renamed.heic")
+        let different = directory.appendingPathComponent("different.heic")
+        try Data("same-image-data".utf8).write(to: first)
+        try Data("same-image-data".utf8).write(to: renamedCopy)
+        try Data("different-image-data".utf8).write(to: different)
+
+        let firstFingerprint = try ImageFingerprint.make(from: first)
+
+        XCTAssertEqual(firstFingerprint, try ImageFingerprint.make(from: renamedCopy))
+        XCTAssertNotEqual(firstFingerprint, try ImageFingerprint.make(from: different))
+        XCTAssertEqual(firstFingerprint.byteSize, Int64(Data("same-image-data".utf8).count))
+    }
+
+    func testPhotoUploadHistoryStoreRoundTrip() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("LogSenseHistoryTests-\(UUID().uuidString)", isDirectory: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let store = PhotoUploadHistoryStore(rootURL: root)
+        let record = UploadedPhotoRecord(
+            contentHash: String(repeating: "a", count: 64),
+            byteSize: 1234,
+            originalFilename: "photo.heic",
+            gyazoURL: "https://i.gyazo.com/example.jpg",
+            capturedDate: "2026-09-03",
+            uploadedAt: Date(timeIntervalSince1970: 1_700_000_000)
+        )
+
+        try store.save(record)
+
+        XCTAssertEqual(store.record(for: record.contentHash), record)
+        XCTAssertNil(store.record(for: "../invalid"))
+    }
+
     func testPhotoImportStoreRoundTrip() throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("LogSenseTests-\(UUID().uuidString)", isDirectory: true)

@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 
 enum SharedSettingsKeys {
     static let primaryProjectName = "ProjectName"
@@ -17,6 +18,7 @@ enum PhotoImportItemState: String, Codable {
     case uploaded
     case failed
     case committed
+    case skipped
 }
 
 enum PhotoImportBatchState: String, Codable {
@@ -38,6 +40,9 @@ struct PhotoImportItem: Codable, Identifiable, Equatable {
     let capturedDate: String
     let camera: String?
     let lens: String?
+    var originalFilename: String? = nil
+    var byteSize: Int64? = nil
+    var contentHash: String? = nil
     var state: PhotoImportItemState
     var gyazoURL: String?
     var attemptCount: Int
@@ -58,6 +63,105 @@ struct PhotoImportBatch: Codable, Identifiable, Equatable {
 
     var failedCount: Int {
         items.filter { $0.state == .failed }.count
+    }
+
+    var skippedCount: Int {
+        items.filter { $0.state == .skipped }.count
+    }
+
+    var processedCount: Int {
+        uploadedCount + failedCount + skippedCount
+    }
+
+    var completionMessage: String {
+        if skippedCount == items.count {
+            return "\(skippedCount)枚すべて重複のためスキップしました。"
+        }
+        if skippedCount > 0 {
+            return "\(uploadedCount)枚を追加し、\(skippedCount)枚の重複をスキップしました。"
+        }
+        return "\(uploadedCount)枚を追加しました。"
+    }
+}
+
+struct ImageFingerprint: Equatable {
+    let sha256: String
+    let byteSize: Int64
+
+    static func make(from url: URL) throws -> ImageFingerprint {
+        let handle = try FileHandle(forReadingFrom: url)
+        defer { try? handle.close() }
+
+        var hasher = SHA256()
+        var byteSize: Int64 = 0
+        while let data = try handle.read(upToCount: 1_048_576), !data.isEmpty {
+            hasher.update(data: data)
+            byteSize += Int64(data.count)
+        }
+        let digest = hasher.finalize().map { String(format: "%02x", $0) }.joined()
+        return ImageFingerprint(sha256: digest, byteSize: byteSize)
+    }
+}
+
+struct UploadedPhotoRecord: Codable, Equatable {
+    let contentHash: String
+    let byteSize: Int64
+    let originalFilename: String?
+    let gyazoURL: String
+    let capturedDate: String
+    let uploadedAt: Date
+}
+
+struct PhotoUploadHistoryStore {
+    private static let directoryName = "UploadedPhotoHistory"
+    let rootURL: URL
+
+    static func shared(fileManager: FileManager = .default) throws -> PhotoUploadHistoryStore {
+        guard let container = fileManager.containerURL(
+            forSecurityApplicationGroupIdentifier: PhotoImportStore.appGroupID
+        ) else {
+            throw PhotoImportStoreError.appGroupUnavailable
+        }
+        return PhotoUploadHistoryStore(
+            rootURL: container.appendingPathComponent(directoryName, isDirectory: true)
+        )
+    }
+
+    func record(for contentHash: String) -> UploadedPhotoRecord? {
+        guard let url = recordURL(for: contentHash),
+              let data = try? Data(contentsOf: url) else {
+            return nil
+        }
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return try? decoder.decode(UploadedPhotoRecord.self, from: data)
+    }
+
+    func save(_ record: UploadedPhotoRecord, fileManager: FileManager = .default) throws {
+        guard let url = recordURL(for: record.contentHash) else {
+            throw PhotoImportStoreError.invalidBatch
+        }
+        try fileManager.createDirectory(at: rootURL, withIntermediateDirectories: true)
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        encoder.outputFormatting = [.sortedKeys]
+        let data = try encoder.encode(record)
+        #if os(iOS)
+        let options: Data.WritingOptions = [.atomic, .completeFileProtection]
+        #else
+        let options: Data.WritingOptions = [.atomic]
+        #endif
+        try data.write(to: url, options: options)
+    }
+
+    private func recordURL(for contentHash: String) -> URL? {
+        let normalized = contentHash.lowercased()
+        let hexCharacters = CharacterSet(charactersIn: "0123456789abcdef")
+        guard normalized.count == 64,
+              normalized.unicodeScalars.allSatisfy(hexCharacters.contains) else {
+            return nil
+        }
+        return rootURL.appendingPathComponent("\(normalized).json", isDirectory: false)
     }
 }
 

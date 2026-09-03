@@ -234,6 +234,8 @@ final class ShareViewController: UIViewController {
         }
 
         let provider = providers[index]
+        let originalFilename = provider.suggestedName?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
         let typeIdentifier = provider.registeredTypeIdentifiers.first {
             UTType($0)?.conforms(to: .image) == true
         } ?? UTType.image.identifier
@@ -255,6 +257,9 @@ final class ShareViewController: UIViewController {
             }
 
             autoreleasepool {
+                let storedOriginalFilename = originalFilename?.isEmpty == false
+                    ? originalFilename
+                    : sourceURL.lastPathComponent
                 let typeExtension = UTType(typeIdentifier)?.preferredFilenameExtension
                 let sourceExtension = sourceURL.pathExtension.isEmpty ? nil : sourceURL.pathExtension
                 let fileExtension = typeExtension ?? sourceExtension ?? "image"
@@ -265,7 +270,12 @@ final class ShareViewController: UIViewController {
                     try FileManager.default.copyItem(at: sourceURL, to: partialURL)
                     try FileManager.default.moveItem(at: partialURL, to: fileURL)
                     let metadata = ImageMetadataReader.read(from: fileURL)
+                    let fingerprint = try ImageFingerprint.make(from: fileURL)
+                    let historyStore = try PhotoUploadHistoryStore.shared()
                     var batch = try store.load(batchID)
+                    let isDuplicate = batch.items.contains {
+                        $0.contentHash == fingerprint.sha256
+                    } || historyStore.record(for: fingerprint.sha256) != nil
                     batch.items.append(PhotoImportItem(
                         id: UUID(),
                         originalIndex: index,
@@ -273,12 +283,19 @@ final class ShareViewController: UIViewController {
                         capturedDate: metadata.date ?? self.currentDate(),
                         camera: metadata.cameraModel,
                         lens: metadata.lensModel,
-                        state: .staged,
+                        originalFilename: storedOriginalFilename,
+                        byteSize: fingerprint.byteSize,
+                        contentHash: fingerprint.sha256,
+                        state: isDuplicate ? .skipped : .staged,
                         gyazoURL: nil,
                         attemptCount: 0,
                         errorMessage: nil
                     ))
                     try store.save(batch)
+                    if isDuplicate {
+                        try? FileManager.default.removeItem(at: fileURL)
+                        LogSenseLogger.debug("[ShareExt] skipped duplicate image \(index)")
+                    }
                 } catch {
                     try? FileManager.default.removeItem(at: partialURL)
                     try? store.remove(batchID)

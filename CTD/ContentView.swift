@@ -665,9 +665,14 @@ struct PhotoImportProgressView: View {
             ProgressView(value: coordinator.progress)
                 .progressViewStyle(.linear)
             if let batch = coordinator.batch {
-                Text("\(batch.uploadedCount + batch.failedCount) / \(batch.items.count)")
+                Text("\(batch.processedCount) / \(batch.items.count)")
                     .font(.caption)
                     .foregroundColor(.secondary)
+                if batch.skippedCount > 0 {
+                    Text("重複スキップ：\(batch.skippedCount)枚")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
             }
             if coordinator.canPause {
                 Button("一時停止") {
@@ -822,7 +827,7 @@ struct PhotoImportQueueView: View {
         case .completed: state = "完了"
         case .failed: state = "失敗"
         }
-        return "\(batch.uploadedCount + batch.failedCount) / \(batch.items.count)枚・\(state)"
+        return "\(batch.processedCount) / \(batch.items.count)枚・\(state)"
     }
 }
 
