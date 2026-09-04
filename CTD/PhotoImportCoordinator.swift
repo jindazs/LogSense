@@ -257,6 +257,16 @@ final class PhotoImportCoordinator: ObservableObject {
                 return item.contentHash
             }
         )
+        var knownGyazoImageIDs = Set<String>(
+            batch.items.compactMap { item in
+                guard item.state == .uploaded || item.state == .committed,
+                      let gyazoURL = item.gyazoURL else { return nil }
+                return GyazoImageIdentity.imageID(from: gyazoURL)?.lowercased()
+            }
+        )
+        if let historyStore {
+            knownGyazoImageIDs.formUnion(historyStore.gyazoImageIDs())
+        }
         var indices: [Int] = []
         for index in batch.items.indices where batch.items[index].state == .staged {
             let fileURL = store.imageURL(batchID: batch.id, filename: batch.items[index].localFilename)
@@ -302,36 +312,18 @@ final class PhotoImportCoordinator: ObservableObject {
             for start in stride(from: 0, to: indices.count, by: 2) {
                 guard !Task.isCancelled else { break }
                 let pair = Array(indices[start..<min(start + 2, indices.count)])
-                await withTaskGroup(of: (Int, Result<String, Error>).self) { group in
+                await withTaskGroup(of: (Int, Result<GyazoUploadReceipt, Error>).self) { group in
                     for index in pair {
                         guard let current = self.batch else { continue }
                         let item = current.items[index]
                         let fileURL = store.imageURL(batchID: current.id, filename: item.localFilename)
                         group.addTask {
                             do {
-                                let url = try await GyazoBatchUploader.uploadWithRetry(
+                                let receipt = try await GyazoBatchUploader.uploadWithRetry(
                                     fileURL: fileURL,
                                     token: token
                                 )
-                                if let contentHash = item.contentHash,
-                                   let byteSize = item.byteSize {
-                                    do {
-                                        let historyStore = try PhotoUploadHistoryStore.shared()
-                                        try historyStore.save(UploadedPhotoRecord(
-                                            contentHash: contentHash,
-                                            byteSize: byteSize,
-                                            originalFilename: item.originalFilename,
-                                            gyazoURL: url,
-                                            capturedDate: item.capturedDate,
-                                            uploadedAt: Date()
-                                        ))
-                                    } catch {
-                                        LogSenseLogger.debug(
-                                            "[LogSense] upload history save failed: \(error.localizedDescription)"
-                                        )
-                                    }
-                                }
-                                return (index, .success(url))
+                                return (index, .success(receipt))
                             } catch {
                                 return (index, .failure(error))
                             }
@@ -341,10 +333,39 @@ final class PhotoImportCoordinator: ObservableObject {
                     for await (index, result) in group {
                         guard var current = self.batch else { continue }
                         switch result {
-                        case .success(let url):
-                            current.items[index].gyazoURL = url
-                            current.items[index].state = .uploaded
+                        case .success(let receipt):
+                            let normalizedImageID = receipt.imageID.lowercased()
+                            let wasAlreadyUploaded = knownGyazoImageIDs.contains(normalizedImageID)
+                            knownGyazoImageIDs.insert(normalizedImageID)
+                            current.items[index].gyazoURL = receipt.url
+                            current.items[index].state = wasAlreadyUploaded ? .skipped : .uploaded
                             current.items[index].errorMessage = nil
+                            if let contentHash = current.items[index].contentHash,
+                               let byteSize = current.items[index].byteSize {
+                                do {
+                                    let historyStore = try PhotoUploadHistoryStore.shared()
+                                    try historyStore.save(UploadedPhotoRecord(
+                                        contentHash: contentHash,
+                                        byteSize: byteSize,
+                                        originalFilename: current.items[index].originalFilename,
+                                        gyazoURL: receipt.url,
+                                        gyazoImageID: receipt.imageID,
+                                        capturedDate: current.items[index].capturedDate,
+                                        uploadedAt: Date()
+                                    ))
+                                } catch {
+                                    LogSenseLogger.debug(
+                                        "[LogSense] upload history save failed: \(error.localizedDescription)"
+                                    )
+                                }
+                            }
+                            if wasAlreadyUploaded {
+                                let fileURL = store.imageURL(
+                                    batchID: current.id,
+                                    filename: current.items[index].localFilename
+                                )
+                                try? FileManager.default.removeItem(at: fileURL)
+                            }
                         case .failure(let error) where error.isCancellation:
                             current.items[index].state = .staged
                             current.items[index].errorMessage = nil
@@ -447,8 +468,17 @@ private struct PreparedUploadFile {
     let shouldRemove: Bool
 }
 
+private struct GyazoUploadReceipt {
+    let imageID: String
+    let url: String
+}
+
 private enum GyazoBatchUploader {
-    static func uploadWithRetry(fileURL: URL, token: String, maximumAttempts: Int = 3) async throws -> String {
+    static func uploadWithRetry(
+        fileURL: URL,
+        token: String,
+        maximumAttempts: Int = 3
+    ) async throws -> GyazoUploadReceipt {
         var attempt = 0
         while true {
             try Task.checkCancellation()
@@ -467,7 +497,7 @@ private enum GyazoBatchUploader {
         }
     }
 
-    private static func upload(fileURL: URL, token: String) async throws -> String {
+    private static func upload(fileURL: URL, token: String) async throws -> GyazoUploadReceipt {
         let prepared = try prepareJPEG(from: fileURL)
         defer {
             if prepared.shouldRemove {
@@ -521,11 +551,13 @@ private enum GyazoBatchUploader {
             throw GyazoBatchUploadError.server(response.statusCode)
         }
         let object = try JSONSerialization.jsonObject(with: data) as? [String: Any]
-        guard let url = object?["url"] as? String,
+        guard let imageID = object?["image_id"] as? String,
+              !imageID.isEmpty,
+              let url = object?["url"] as? String,
               URL(string: url)?.scheme?.lowercased() == "https" else {
             throw GyazoBatchUploadError.invalidImageURL
         }
-        return url
+        return GyazoUploadReceipt(imageID: imageID, url: url)
     }
 
     private static func prepareJPEG(from sourceURL: URL) throws -> PreparedUploadFile {

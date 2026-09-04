@@ -108,6 +108,7 @@ struct UploadedPhotoRecord: Codable, Equatable {
     let byteSize: Int64
     let originalFilename: String?
     let gyazoURL: String
+    var gyazoImageID: String? = nil
     let capturedDate: String
     let uploadedAt: Date
 }
@@ -137,6 +138,42 @@ struct PhotoUploadHistoryStore {
         return try? decoder.decode(UploadedPhotoRecord.self, from: data)
     }
 
+    func record(forGyazoImageID imageID: String, fileManager: FileManager = .default) -> UploadedPhotoRecord? {
+        let normalizedImageID = imageID.lowercased()
+        return records(fileManager: fileManager).first { record in
+            gyazoImageID(for: record)?.lowercased() == normalizedImageID
+        }
+    }
+
+    func gyazoImageIDs(fileManager: FileManager = .default) -> Set<String> {
+        Set(records(fileManager: fileManager).compactMap { record in
+            gyazoImageID(for: record)?.lowercased()
+        })
+    }
+
+    private func records(fileManager: FileManager) -> [UploadedPhotoRecord] {
+        guard let urls = try? fileManager.contentsOfDirectory(
+            at: rootURL,
+            includingPropertiesForKeys: nil,
+            options: [.skipsHiddenFiles]
+        ) else {
+            return []
+        }
+        return urls.compactMap { url -> UploadedPhotoRecord? in
+            guard url.pathExtension.lowercased() == "json",
+                  let data = try? Data(contentsOf: url) else {
+                return nil
+            }
+            let decoder = JSONDecoder()
+            decoder.dateDecodingStrategy = .iso8601
+            return try? decoder.decode(UploadedPhotoRecord.self, from: data)
+        }
+    }
+
+    private func gyazoImageID(for record: UploadedPhotoRecord) -> String? {
+        record.gyazoImageID ?? GyazoImageIdentity.imageID(from: record.gyazoURL)
+    }
+
     func save(_ record: UploadedPhotoRecord, fileManager: FileManager = .default) throws {
         guard let url = recordURL(for: record.contentHash) else {
             throw PhotoImportStoreError.invalidBatch
@@ -162,6 +199,20 @@ struct PhotoUploadHistoryStore {
             return nil
         }
         return rootURL.appendingPathComponent("\(normalized).json", isDirectory: false)
+    }
+}
+
+enum GyazoImageIdentity {
+    static func imageID(from urlString: String) -> String? {
+        guard let url = URL(string: urlString),
+              let host = url.host?.lowercased(),
+              host == "gyazo.com" || host.hasSuffix(".gyazo.com") else {
+            return nil
+        }
+        let filename = url.lastPathComponent
+        let imageID = (filename as NSString).deletingPathExtension
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return imageID.isEmpty ? nil : imageID
     }
 }
 

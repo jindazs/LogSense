@@ -251,6 +251,43 @@ final class CTDTests: XCTestCase {
         XCTAssertNil(store.record(for: "../invalid"))
     }
 
+    func testPhotoUploadHistoryStoreFindsCurrentGyazoImageID() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("LogSenseHistoryTests-\(UUID().uuidString)", isDirectory: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let store = PhotoUploadHistoryStore(rootURL: root)
+        let record = UploadedPhotoRecord(
+            contentHash: String(repeating: "b", count: 64),
+            byteSize: 123,
+            originalFilename: "photo.jpg",
+            gyazoURL: "https://i.gyazo.com/current-id.jpg",
+            gyazoImageID: "current-id",
+            capturedDate: "2026-09-04",
+            uploadedAt: Date(timeIntervalSince1970: 1_700_000_000)
+        )
+        try store.save(record)
+
+        XCTAssertEqual(store.record(forGyazoImageID: "CURRENT-ID"), record)
+    }
+
+    func testPhotoUploadHistoryStoreFindsLegacyGyazoImageIDFromURL() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("LogSenseHistoryTests-\(UUID().uuidString)", isDirectory: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let store = PhotoUploadHistoryStore(rootURL: root)
+        let record = UploadedPhotoRecord(
+            contentHash: String(repeating: "c", count: 64),
+            byteSize: 456,
+            originalFilename: "legacy.jpg",
+            gyazoURL: "https://i.gyazo.com/legacy-id.png",
+            capturedDate: "2026-09-04",
+            uploadedAt: Date(timeIntervalSince1970: 1_700_000_000)
+        )
+        try store.save(record)
+
+        XCTAssertEqual(store.record(forGyazoImageID: "legacy-id"), record)
+    }
+
     func testPhotoImportStoreRoundTrip() throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("LogSenseTests-\(UUID().uuidString)", isDirectory: true)
