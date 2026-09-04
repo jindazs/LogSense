@@ -12,6 +12,44 @@ import UIKit
 @testable import CTD
 
 final class CTDTests: XCTestCase {
+    @MainActor
+    func testPhotoImportCoordinatorIgnoresDuplicateStartForActiveBatch() {
+        let batchID = UUID()
+
+        XCTAssertEqual(
+            PhotoImportCoordinator.startDecision(
+                isWorking: true,
+                currentBatchID: batchID,
+                requestedBatchID: batchID
+            ),
+            .ignoreCurrentBatch
+        )
+    }
+
+    @MainActor
+    func testPhotoImportCoordinatorRejectsDifferentBatchWhileWorking() {
+        XCTAssertEqual(
+            PhotoImportCoordinator.startDecision(
+                isWorking: true,
+                currentBatchID: UUID(),
+                requestedBatchID: UUID()
+            ),
+            .rejectDifferentBatch
+        )
+    }
+
+    @MainActor
+    func testPhotoImportCoordinatorAllowsStartWhileIdle() {
+        XCTAssertEqual(
+            PhotoImportCoordinator.startDecision(
+                isWorking: false,
+                currentBatchID: UUID(),
+                requestedBatchID: UUID()
+            ),
+            .start
+        )
+    }
+
     func testScrapboxURLBuilderPreservesBodyAsSingleQueryValue() throws {
         let body = "[Example & Notes https://example.com/page?a=1&b=2]\n#inbox"
         let url = try XCTUnwrap(

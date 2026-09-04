@@ -3,6 +3,12 @@ import UIKit
 
 @MainActor
 final class PhotoImportCoordinator: ObservableObject {
+    enum StartDecision: Equatable {
+        case start
+        case ignoreCurrentBatch
+        case rejectDifferentBatch
+    }
+
     @Published private(set) var batch: PhotoImportBatch?
     @Published private(set) var pendingBatches: [PhotoImportBatch] = []
     @Published private(set) var statusMessage = ""
@@ -13,6 +19,7 @@ final class PhotoImportCoordinator: ObservableObject {
     private var store: PhotoImportStore?
     private var commitHandler: (([PhotoImportAppend], @escaping (Bool) -> Void) -> Void)?
     private var uploadTask: Task<Void, Never>?
+    private var activeCommitID: UUID?
 
     var progress: Double {
         guard let batch, !batch.items.isEmpty else { return 0 }
@@ -63,7 +70,16 @@ final class PhotoImportCoordinator: ObservableObject {
         token: String,
         commitHandler: @escaping ([PhotoImportAppend], @escaping (Bool) -> Void) -> Void
     ) {
-        guard !isWorking || batch?.id == batchID else {
+        switch Self.startDecision(
+            isWorking: isWorking,
+            currentBatchID: batch?.id,
+            requestedBatchID: batchID
+        ) {
+        case .start:
+            break
+        case .ignoreCurrentBatch:
+            return
+        case .rejectDifferentBatch:
             statusMessage = "現在のアップロードを一時停止してから別の項目を開いてください。"
             return
         }
@@ -149,13 +165,19 @@ final class PhotoImportCoordinator: ObservableObject {
     }
 
     func commitSuccessfulItems() {
-        guard var batch, let commitHandler else { return }
+        guard !isWorking,
+              activeCommitID == nil,
+              var batch,
+              let commitHandler else { return }
         let appends = PhotoImportBodyBuilder.makeAppends(from: batch.items)
         guard !appends.isEmpty else {
             statusMessage = "追加できる画像がありません。"
             return
         }
 
+        let commitID = UUID()
+        let batchID = batch.id
+        activeCommitID = commitID
         batch.state = .committing
         persist(batch)
         isWorking = true
@@ -163,7 +185,11 @@ final class PhotoImportCoordinator: ObservableObject {
 
         commitHandler(appends) { [weak self] success in
             Task { @MainActor in
-                guard let self, var current = self.batch else { return }
+                guard let self,
+                      self.activeCommitID == commitID,
+                      var current = self.batch,
+                      current.id == batchID else { return }
+                self.activeCommitID = nil
                 self.isWorking = false
                 if success {
                     let committedIDs = Set(appends.flatMap(\.itemIDs))
@@ -182,6 +208,15 @@ final class PhotoImportCoordinator: ObservableObject {
                 }
             }
         }
+    }
+
+    static func startDecision(
+        isWorking: Bool,
+        currentBatchID: UUID?,
+        requestedBatchID: UUID
+    ) -> StartDecision {
+        guard isWorking else { return .start }
+        return currentBatchID == requestedBatchID ? .ignoreCurrentBatch : .rejectDifferentBatch
     }
 
     func close() {
