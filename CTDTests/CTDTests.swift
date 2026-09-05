@@ -202,6 +202,28 @@ final class CTDTests: XCTestCase {
     }
 
     @MainActor
+    func testPageTextVerificationWaitsForAsyncFetchResult() async throws {
+        let webView = CustomWebView()
+        let loaded = await withCheckedContinuation { continuation in
+            webView.loadURL(URL(string: "about:blank")!) { success in
+                continuation.resume(returning: success)
+            }
+        }
+        XCTAssertTrue(loaded)
+
+        let result = await withCheckedContinuation { continuation in
+            webView.checkPageText(
+                at: URL(string: "data:text/plain,async-verification-complete")!,
+                containing: ["async-verification-complete"]
+            ) { result in
+                continuation.resume(returning: result)
+            }
+        }
+
+        XCTAssertEqual(result, .confirmed)
+    }
+
+    @MainActor
     func testInputAccessoryViewIsReused() {
         let webView = CustomWebView()
 

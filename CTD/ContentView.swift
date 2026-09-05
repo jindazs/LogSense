@@ -837,48 +837,50 @@ class CustomWebView: WKWebView, WKNavigationDelegate {
         containing fragments: [String],
         completion: @escaping (PageAppendVerificationResult) -> Void
     ) {
-        guard !fragments.isEmpty,
-              let urlLiteral = javaScriptLiteral(url.absoluteString),
-              let fragmentsLiteral = javaScriptLiteral(fragments) else {
+        guard !fragments.isEmpty else {
             completion(.unavailable)
             return
         }
         let script = """
-        (async function() {
-            try {
-                const response = await fetch(\(urlLiteral), {
-                    credentials: 'include',
-                    cache: 'no-store'
-                });
-                if (response.status === 404) return 'missing';
-                if (!response.ok) return 'unavailable';
-                const text = await response.text();
-                return \(fragmentsLiteral).every(fragment => text.includes(fragment))
-                    ? 'confirmed'
-                    : 'missing';
-            } catch (_) {
-                return 'unavailable';
-            }
-        })();
+        try {
+            const response = await fetch(url, {
+                credentials: 'include',
+                cache: 'no-store'
+            });
+            if (response.status === 404) return 'missing';
+            if (!response.ok) return 'unavailable';
+            const text = await response.text();
+            return fragments.every(fragment => text.includes(fragment))
+                ? 'confirmed'
+                : 'missing';
+        } catch (_) {
+            return 'unavailable';
+        }
         """
-        evaluateJavaScript(script) { result, _ in
-            switch result as? String {
-            case "confirmed": completion(.confirmed)
-            case "missing": completion(.missing)
-            default: completion(.unavailable)
+        callAsyncJavaScript(
+            script,
+            arguments: [
+                "url": url.absoluteString,
+                "fragments": fragments
+            ],
+            in: nil,
+            in: .page,
+            completionHandler: { result in
+                switch result {
+                case .success(let value):
+                    switch value as? String {
+                    case "confirmed": completion(.confirmed)
+                    case "missing": completion(.missing)
+                    default: completion(.unavailable)
+                    }
+                case .failure(let error):
+                    LogSenseLogger.debug(
+                        "[LogSense] Cosense page verification failed: \(error.localizedDescription)"
+                    )
+                    completion(.unavailable)
+                }
             }
-        }
-    }
-
-    private func javaScriptLiteral(_ value: Any) -> String? {
-        guard let data = try? JSONSerialization.data(
-            withJSONObject: value,
-            options: [.fragmentsAllowed]
-        ),
-              let literal = String(data: data, encoding: .utf8) else {
-            return nil
-        }
-        return literal
+        )
     }
 
     // -----------------------------
