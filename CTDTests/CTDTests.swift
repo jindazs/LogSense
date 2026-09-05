@@ -184,6 +184,24 @@ final class CTDTests: XCTestCase {
     }
 
     @MainActor
+    func testWebViewModelLoadsEveryPageAppendSequentially() async throws {
+        let model = WebViewModel(url: URL(string: "about:blank?initial")!)
+        let urls = [
+            URL(string: "about:blank?date=2026-06-14")!,
+            URL(string: "about:blank?date=2026-06-01")!
+        ]
+
+        let succeeded = await withCheckedContinuation { continuation in
+            model.loadURLsSequentially(urls) { success in
+                continuation.resume(returning: success)
+            }
+        }
+
+        XCTAssertTrue(succeeded)
+        XCTAssertEqual(model.currentURL, urls.last)
+    }
+
+    @MainActor
     func testInputAccessoryViewIsReused() {
         let webView = CustomWebView()
 

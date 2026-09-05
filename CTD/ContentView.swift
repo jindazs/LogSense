@@ -78,12 +78,18 @@ enum PhotoImportScenePolicy {
 }
 
 final class WebViewModel: ObservableObject {
+    private static let pageAppendSettlingDelay: TimeInterval = 0.8
+
     private var webView: CustomWebView?
     private var initialURL: URL
     private var pendingURL: URL?
 
     var isWebViewCreated: Bool {
         webView != nil
+    }
+
+    var currentURL: URL? {
+        webView?.url
     }
 
     init(url: URL) {
@@ -150,7 +156,13 @@ final class WebViewModel: ObservableObject {
                 completion(false)
                 return
             }
-            self?.loadURLsSequentially(Array(urls.dropFirst()), completion: completion)
+            DispatchQueue.main.asyncAfter(deadline: .now() + Self.pageAppendSettlingDelay) {
+                guard let self else {
+                    completion(false)
+                    return
+                }
+                self.loadURLsSequentially(Array(urls.dropFirst()), completion: completion)
+            }
         }
     }
 }
@@ -653,6 +665,7 @@ struct ContentView: View {
 
 class CustomWebView: WKWebView, WKNavigationDelegate {
     private var loadCompletion: ((Bool) -> Void)?
+    private var trackedNavigation: WKNavigation?
 
     override init(frame: CGRect, configuration: WKWebViewConfiguration) {
         super.init(frame: frame, configuration: configuration)
@@ -665,8 +678,12 @@ class CustomWebView: WKWebView, WKNavigationDelegate {
     }
 
     func loadURL(_ url: URL, completion: @escaping (Bool) -> Void) {
+        guard let navigation = load(URLRequest(url: url)) else {
+            completion(false)
+            return
+        }
+        trackedNavigation = navigation
         loadCompletion = completion
-        load(URLRequest(url: url))
     }
 
     // -----------------------------
@@ -778,9 +795,7 @@ class CustomWebView: WKWebView, WKNavigationDelegate {
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-        let completion = loadCompletion
-        loadCompletion = nil
-        completion?(true)
+        finishTrackedLoad(navigation, success: true)
     }
 
     func webView(
@@ -788,9 +803,7 @@ class CustomWebView: WKWebView, WKNavigationDelegate {
         didFail navigation: WKNavigation!,
         withError error: Error
     ) {
-        let completion = loadCompletion
-        loadCompletion = nil
-        completion?(false)
+        finishTrackedLoad(navigation, success: false)
     }
 
     func webView(
@@ -798,9 +811,15 @@ class CustomWebView: WKWebView, WKNavigationDelegate {
         didFailProvisionalNavigation navigation: WKNavigation!,
         withError error: Error
     ) {
+        finishTrackedLoad(navigation, success: false)
+    }
+
+    private func finishTrackedLoad(_ navigation: WKNavigation, success: Bool) {
+        guard navigation === trackedNavigation else { return }
         let completion = loadCompletion
+        trackedNavigation = nil
         loadCompletion = nil
-        completion?(false)
+        completion?(success)
     }
 
 }
