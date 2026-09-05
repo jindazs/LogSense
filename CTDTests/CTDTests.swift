@@ -218,11 +218,49 @@ final class CTDTests: XCTestCase {
         let appends = PhotoImportBodyBuilder.makeAppends(from: items)
 
         XCTAssertEqual(appends.map(\.pageTitle), ["2026-07-20", "2026-07-21"])
+        XCTAssertEqual(
+            appends.map(\.verificationFragments),
+            [
+                ["https://i.gyazo.com/1.jpg", "https://i.gyazo.com/2.jpg"],
+                ["https://i.gyazo.com/3.jpg"]
+            ]
+        )
         XCTAssertTrue(appends[0].body.contains("[https://i.gyazo.com/1.jpg]"))
         XCTAssertTrue(appends[0].body.contains("[https://i.gyazo.com/2.jpg]"))
         XCTAssertLessThan(
             try XCTUnwrap(appends[0].body.range(of: "1.jpg")?.lowerBound),
             try XCTUnwrap(appends[0].body.range(of: "2.jpg")?.lowerBound)
+        )
+    }
+
+    func testPageAppendRequestsKeepEveryDateAndVerificationTarget() throws {
+        let items = [
+            makeUploadedPhoto(index: 0, date: "2026-06-14", url: "https://i.gyazo.com/june14.jpg"),
+            makeUploadedPhoto(index: 1, date: "2026-06-01", url: "https://i.gyazo.com/june01.jpg")
+        ]
+        let appends = PhotoImportBodyBuilder.makeAppends(from: items)
+
+        let requests = try appends.map {
+            try XCTUnwrap(
+                ScrapboxURLBuilder.makePageAppendRequest(project: "private-jindazs", append: $0)
+            )
+        }
+
+        XCTAssertEqual(requests.count, 2)
+        XCTAssertEqual(
+            requests.map(\.pageURL.path),
+            ["/private-jindazs/2026-06-14", "/private-jindazs/2026-06-01"]
+        )
+        XCTAssertEqual(
+            requests.map(\.verificationURL.path),
+            [
+                "/api/pages/private-jindazs/2026-06-14/text",
+                "/api/pages/private-jindazs/2026-06-01/text"
+            ]
+        )
+        XCTAssertEqual(
+            requests.map(\.expectedFragments),
+            [["https://i.gyazo.com/june14.jpg"], ["https://i.gyazo.com/june01.jpg"]]
         )
     }
 

@@ -78,8 +78,6 @@ enum PhotoImportScenePolicy {
 }
 
 final class WebViewModel: ObservableObject {
-    private static let pageAppendSettlingDelay: TimeInterval = 0.8
-
     private var webView: CustomWebView?
     private var initialURL: URL
     private var pendingURL: URL?
@@ -156,12 +154,37 @@ final class WebViewModel: ObservableObject {
                 completion(false)
                 return
             }
-            DispatchQueue.main.asyncAfter(deadline: .now() + Self.pageAppendSettlingDelay) {
-                guard let self else {
+            self?.loadURLsSequentially(Array(urls.dropFirst()), completion: completion)
+        }
+    }
+
+    func loadPageAppendsSequentially(
+        _ requests: [ScrapboxPageAppendRequest],
+        completion: @escaping (Bool) -> Void
+    ) {
+        guard let first = requests.first else {
+            completion(true)
+            return
+        }
+        let webView = webViewForDisplay()
+        webView.stopLoading()
+        webView.loadURL(first.pageURL) { [weak self, weak webView] success in
+            guard success, let webView else {
+                completion(false)
+                return
+            }
+            webView.waitForPageText(
+                at: first.verificationURL,
+                containing: first.expectedFragments
+            ) { verified in
+                guard verified, let self else {
                     completion(false)
                     return
                 }
-                self.loadURLsSequentially(Array(urls.dropFirst()), completion: completion)
+                self.loadPageAppendsSequentially(
+                    Array(requests.dropFirst()),
+                    completion: completion
+                )
             }
         }
     }
@@ -616,18 +639,17 @@ struct ContentView: View {
                 batchID: batchID,
                 token: GyazoTokenStore.load(migratingFrom: groupDefaults)
             ) { appends, completion in
-                let urls = appends.compactMap {
-                    ScrapboxURLBuilder.makePageURL(
+                let requests = appends.compactMap {
+                    ScrapboxURLBuilder.makePageAppendRequest(
                         project: batch.projectName,
-                        title: $0.pageTitle,
-                        body: $0.body
+                        append: $0
                     )
                 }
-                guard urls.count == appends.count else {
+                guard requests.count == appends.count else {
                     completion(false)
                     return
                 }
-                targetWebView.loadURLsSequentially(urls, completion: completion)
+                targetWebView.loadPageAppendsSequentially(requests, completion: completion)
             }
         } catch {
             LogSenseLogger.debug("[LogSense] photo batch load failed: \(error.localizedDescription)")
@@ -664,6 +686,9 @@ struct ContentView: View {
 }
 
 class CustomWebView: WKWebView, WKNavigationDelegate {
+    private static let pageVerificationInterval: TimeInterval = 0.6
+    private static let pageVerificationTimeout: TimeInterval = 20
+
     private var loadCompletion: ((Bool) -> Void)?
     private var trackedNavigation: WKNavigation?
 
@@ -684,6 +709,80 @@ class CustomWebView: WKWebView, WKNavigationDelegate {
         }
         trackedNavigation = navigation
         loadCompletion = completion
+    }
+
+    func waitForPageText(
+        at url: URL,
+        containing fragments: [String],
+        completion: @escaping (Bool) -> Void
+    ) {
+        guard !fragments.isEmpty else {
+            completion(false)
+            return
+        }
+        pollPageText(
+            at: url,
+            containing: fragments,
+            deadline: Date().addingTimeInterval(Self.pageVerificationTimeout),
+            completion: completion
+        )
+    }
+
+    private func pollPageText(
+        at url: URL,
+        containing fragments: [String],
+        deadline: Date,
+        completion: @escaping (Bool) -> Void
+    ) {
+        guard let urlLiteral = javaScriptLiteral(url.absoluteString),
+              let fragmentsLiteral = javaScriptLiteral(fragments) else {
+            completion(false)
+            return
+        }
+        let script = """
+        (async function() {
+            try {
+                const response = await fetch(\(urlLiteral), {
+                    credentials: 'include',
+                    cache: 'no-store'
+                });
+                if (!response.ok) return false;
+                const text = await response.text();
+                return \(fragmentsLiteral).every(fragment => text.includes(fragment));
+            } catch (_) {
+                return false;
+            }
+        })();
+        """
+        evaluateJavaScript(script) { [weak self] result, _ in
+            if (result as? NSNumber)?.boolValue == true {
+                completion(true)
+                return
+            }
+            guard let self, Date() < deadline else {
+                completion(false)
+                return
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + Self.pageVerificationInterval) {
+                self.pollPageText(
+                    at: url,
+                    containing: fragments,
+                    deadline: deadline,
+                    completion: completion
+                )
+            }
+        }
+    }
+
+    private func javaScriptLiteral(_ value: Any) -> String? {
+        guard let data = try? JSONSerialization.data(
+            withJSONObject: value,
+            options: [.fragmentsAllowed]
+        ),
+              let literal = String(data: data, encoding: .utf8) else {
+            return nil
+        }
+        return literal
     }
 
     // -----------------------------

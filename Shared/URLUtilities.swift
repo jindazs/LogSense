@@ -1,5 +1,11 @@
 import Foundation
 
+struct ScrapboxPageAppendRequest: Equatable {
+    let pageURL: URL
+    let verificationURL: URL
+    let expectedFragments: [String]
+}
+
 enum ScrapboxURLBuilder {
     private static let pathComponentAllowed = CharacterSet(
         charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~"
@@ -22,6 +28,44 @@ enum ScrapboxURLBuilder {
             components.queryItems = [URLQueryItem(name: "body", value: body)]
         }
 
+        return components.url
+    }
+
+    static func makePageAppendRequest(
+        project: String,
+        append: PhotoImportAppend
+    ) -> ScrapboxPageAppendRequest? {
+        guard let pageURL = makePageURL(
+            project: project,
+            title: append.pageTitle,
+            body: append.body
+        ),
+        let verificationURL = makePageTextAPIURL(
+            project: project,
+            title: append.pageTitle
+        ),
+        !append.verificationFragments.isEmpty else {
+            return nil
+        }
+        return ScrapboxPageAppendRequest(
+            pageURL: pageURL,
+            verificationURL: verificationURL,
+            expectedFragments: append.verificationFragments
+        )
+    }
+
+    static func makePageTextAPIURL(project: String, title: String) -> URL? {
+        let project = project.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !project.isEmpty,
+              let encodedProject = encodePathComponent(project),
+              let encodedTitle = encodePathComponent(title) else {
+            return nil
+        }
+
+        var components = URLComponents()
+        components.scheme = "https"
+        components.host = "scrapbox.io"
+        components.percentEncodedPath = "/api/pages/\(encodedProject)/\(encodedTitle)/text"
         return components.url
     }
 

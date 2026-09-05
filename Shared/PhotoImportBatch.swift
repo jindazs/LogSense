@@ -220,6 +220,7 @@ struct PhotoImportAppend: Equatable {
     let pageTitle: String
     let body: String
     let itemIDs: [UUID]
+    let verificationFragments: [String]
 }
 
 enum PhotoImportBodyBuilder {
@@ -247,7 +248,8 @@ enum PhotoImportBodyBuilder {
                 return PhotoImportAppend(
                     pageTitle: date,
                     body: chunk.map(makeBody).joined(separator: "\n\n"),
-                    itemIDs: chunk.map(\.id)
+                    itemIDs: chunk.map(\.id),
+                    verificationFragments: chunk.compactMap(\.gyazoURL)
                 )
             }
         }
