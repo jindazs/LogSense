@@ -35,7 +35,8 @@ final class CTDUITests: XCTestCase {
 
         app.buttons["その他の操作"].tap()
         XCTAssertTrue(app.buttons["設定"].waitForExistence(timeout: 3))
-        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.3)).tap()
+        app.buttons["その他の操作"].tap()
+        XCTAssertFalse(app.buttons["設定"].waitForExistence(timeout: 1))
 
         app.buttons["Today"].tap()
         app.buttons["その他の操作"].tap()
@@ -45,7 +46,13 @@ final class CTDUITests: XCTestCase {
 
         app.buttons["Photos"].tap()
         app.buttons["その他の操作"].tap()
-        XCTAssertTrue(app.buttons["写真アップロードキュー"].waitForExistence(timeout: 3))
+        let photoQueueButton = app.buttons["写真アップロードキュー"]
+        XCTAssertTrue(photoQueueButton.waitForExistence(timeout: 3))
+        XCTAssertLessThan(
+            photoQueueButton.frame.maxY,
+            app.buttons["その他の操作"].frame.minY,
+            "補助メニューは下部ナビゲーションの上に表示される必要があります"
+        )
     }
 
     func testLaunchPerformance() throws {

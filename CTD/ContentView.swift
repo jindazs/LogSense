@@ -142,6 +142,7 @@ struct ContentView: View {
     @State private var gyazoToken: String = GyazoTokenStore.load(migratingFrom: groupDefaults)
     @State private var showSettings: Bool = false
     @State private var showPhotoQueue: Bool = false
+    @State private var showAuxiliaryMenu: Bool = false
     @State private var settingsDidSave: Bool = false
     @State private var selectedTab: AppTab = .home
     @State private var currentDate = ""
@@ -162,19 +163,36 @@ struct ContentView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            if selectedTab == .todo {
-                WebViewWrapper(webViewModel: todoWebViewModel)
-            } else if selectedTab == .home {
-                WebViewWrapper(webViewModel: mainWebViewModel)
-            } else if selectedTab == .today {
-                WebViewWrapper(webViewModel: dateWebViewModel)
-            } else if selectedTab == .photos {
-                WebViewWrapper(webViewModel: photoWebViewModel)
-            }
+            ZStack(alignment: .bottomTrailing) {
+                VStack(spacing: 0) {
+                    if selectedTab == .todo {
+                        WebViewWrapper(webViewModel: todoWebViewModel)
+                    } else if selectedTab == .home {
+                        WebViewWrapper(webViewModel: mainWebViewModel)
+                    } else if selectedTab == .today {
+                        WebViewWrapper(webViewModel: dateWebViewModel)
+                    } else if selectedTab == .photos {
+                        WebViewWrapper(webViewModel: photoWebViewModel)
+                    }
 
-            if selectedTab == .photos && shouldShowPhotoImportStatus {
-                Divider()
-                photoImportStatus
+                    if selectedTab == .photos && shouldShowPhotoImportStatus {
+                        Divider()
+                        photoImportStatus
+                    }
+                }
+
+                if showAuxiliaryMenu {
+                    Color.clear
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            closeAuxiliaryMenu()
+                        }
+
+                    auxiliaryMenu
+                        .padding(.trailing, 12)
+                        .padding(.bottom, 12)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
             }
 
             Divider()
@@ -261,50 +279,107 @@ struct ContentView: View {
             Divider()
                 .frame(height: 32)
 
-            Menu {
-                if selectedTab == .today {
-                    Button {
-                        openTodayPage()
-                    } label: {
-                        Label("今日に戻る", systemImage: "calendar")
-                    }
-
-                    Button {
-                        openCurrentYearPage()
-                    } label: {
-                        Label("今年のページを開く", systemImage: "calendar.badge.clock")
-                    }
-                } else if selectedTab == .photos {
-                    Button {
-                        presentPhotoQueue()
-                    } label: {
-                        Label(photoQueueMenuTitle, systemImage: "tray.full")
-                    }
-                    .accessibilityLabel("写真アップロードキュー")
-                    .accessibilityValue(photoQueueAccessibilityValue)
-                }
-
-                Divider()
-
-                Button {
-                    settingsDidSave = false
-                    showSettings = true
-                } label: {
-                    Label("設定", systemImage: "gearshape")
+            Button {
+                withAnimation(.easeOut(duration: 0.18)) {
+                    showAuxiliaryMenu.toggle()
                 }
             } label: {
                 Image(systemName: "ellipsis")
                     .font(.system(size: 19, weight: .semibold))
-                    .foregroundColor(.secondary)
+                    .foregroundColor(showAuxiliaryMenu ? .accentColor : .secondary)
                     .frame(width: 48, height: 50)
+                    .background {
+                        if showAuxiliaryMenu {
+                            Circle()
+                                .fill(Color.accentColor.opacity(0.12))
+                                .frame(width: 36, height: 36)
+                        }
+                    }
                     .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
             .accessibilityLabel("その他の操作")
-            .accessibilityHint("現在の画面で利用できる補助操作を表示します")
+            .accessibilityValue(showAuxiliaryMenu ? "表示中" : "非表示")
+            .accessibilityHint(
+                showAuxiliaryMenu
+                    ? "補助操作を閉じます"
+                    : "現在の画面で利用できる補助操作を表示します"
+            )
         }
         .padding(.horizontal, 8)
         .padding(.top, 4)
         .background(Color(uiColor: .secondarySystemBackground).ignoresSafeArea(edges: .bottom))
+    }
+
+    private var auxiliaryMenu: some View {
+        VStack(spacing: 0) {
+            auxiliaryMenuButton(title: "設定", symbolName: "gearshape") {
+                closeAuxiliaryMenu()
+                settingsDidSave = false
+                showSettings = true
+            }
+
+            if selectedTab == .today {
+                Divider()
+                    .padding(.horizontal, 16)
+
+                auxiliaryMenuButton(title: "今日に戻る", symbolName: "calendar") {
+                    closeAuxiliaryMenu()
+                    openTodayPage()
+                }
+
+                Divider()
+                    .padding(.leading, 52)
+
+                auxiliaryMenuButton(title: "今年のページを開く", symbolName: "calendar.badge.clock") {
+                    closeAuxiliaryMenu()
+                    openCurrentYearPage()
+                }
+            } else if selectedTab == .photos {
+                Divider()
+                    .padding(.horizontal, 16)
+
+                auxiliaryMenuButton(title: photoQueueMenuTitle, symbolName: "tray.full") {
+                    closeAuxiliaryMenu()
+                    presentPhotoQueue()
+                }
+                .accessibilityLabel("写真アップロードキュー")
+                .accessibilityValue(photoQueueAccessibilityValue)
+            }
+        }
+        .frame(width: 280)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .stroke(Color.primary.opacity(0.08), lineWidth: 0.5)
+        }
+        .shadow(color: .black.opacity(0.2), radius: 18, y: 8)
+        .accessibilityElement(children: .contain)
+    }
+
+    private func auxiliaryMenuButton(
+        title: String,
+        symbolName: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            HStack(spacing: 16) {
+                Image(systemName: symbolName)
+                    .font(.system(size: 18, weight: .medium))
+                    .frame(width: 22)
+
+                Text(title)
+                    .font(.body)
+                    .lineLimit(1)
+
+                Spacer(minLength: 0)
+            }
+            .foregroundColor(.primary)
+            .padding(.horizontal, 20)
+            .frame(height: 56)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 
     private var photoImportStatus: some View {
@@ -380,6 +455,7 @@ struct ContentView: View {
     }
 
     private func select(_ tab: AppTab) {
+        closeAuxiliaryMenu()
         if selectedTab == tab {
             reset(tab)
         } else {
@@ -417,6 +493,12 @@ struct ContentView: View {
     private func presentPhotoQueue() {
         photoImportCoordinator.refreshQueue()
         showPhotoQueue = true
+    }
+
+    private func closeAuxiliaryMenu() {
+        withAnimation(.easeOut(duration: 0.15)) {
+            showAuxiliaryMenu = false
+        }
     }
 
     private func applyProjectName() {
