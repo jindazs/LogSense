@@ -162,9 +162,6 @@ struct ContentView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            topControls
-            Divider()
-
             if selectedTab == .todo {
                 WebViewWrapper(webViewModel: todoWebViewModel)
             } else if selectedTab == .home {
@@ -225,76 +222,8 @@ struct ContentView: View {
         }
     }
 
-    private var topControls: some View {
-        HStack(spacing: 8) {
-            if selectedTab == .today {
-                Menu {
-                    Button {
-                        openTodayPage()
-                    } label: {
-                        Label("今日に戻る", systemImage: "calendar")
-                    }
-
-                    Button {
-                        openCurrentYearPage()
-                    } label: {
-                        Label("今年のページを開く", systemImage: "calendar.badge.clock")
-                    }
-                } label: {
-                    Label("日付", systemImage: "calendar")
-                        .font(.subheadline.weight(.semibold))
-                        .padding(.horizontal, 13)
-                        .frame(height: 44)
-                        .contentShape(Rectangle())
-                }
-                .accessibilityLabel("日付ページを選択")
-            } else if selectedTab == .photos {
-                Button {
-                    presentPhotoQueue()
-                } label: {
-                    HStack(spacing: 7) {
-                        Image(systemName: photoImportCoordinator.isWorking ? "arrow.up.circle.fill" : "tray.full")
-                        Text(photoImportCoordinator.isWorking ? "アップロード中" : "アップロード")
-                        if !photoImportCoordinator.pendingBatches.isEmpty {
-                            Text("\(photoImportCoordinator.pendingBatches.count)")
-                                .font(.caption2.weight(.bold))
-                                .foregroundColor(.white)
-                                .frame(minWidth: 18, minHeight: 18)
-                                .background(Circle().fill(photoImportStatusColor))
-                        }
-                    }
-                    .font(.subheadline.weight(.semibold))
-                    .padding(.horizontal, 13)
-                    .frame(height: 44)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("写真アップロードキュー")
-                .accessibilityValue(photoQueueAccessibilityValue)
-            }
-
-            Spacer()
-
-            Button {
-                settingsDidSave = false
-                showSettings = true
-            } label: {
-                Image(systemName: "gearshape.fill")
-                    .font(.system(size: 17, weight: .semibold))
-                    .frame(width: 44, height: 44)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("設定")
-        }
-        .foregroundColor(.accentColor)
-        .padding(.horizontal, 8)
-        .frame(height: 48)
-        .background(Color(uiColor: .systemBackground))
-    }
-
     private var bottomTabBar: some View {
-        HStack(spacing: 4) {
+        HStack(spacing: 0) {
             ForEach(AppTab.allCases, id: \.self) { tab in
                 let isSelected = selectedTab == tab
                 Button {
@@ -328,6 +257,50 @@ struct ContentView: View {
                 .accessibilityValue(isSelected ? "選択中" : "")
                 .accessibilityHint(isSelected ? "もう一度押すと最初のページに戻ります" : "")
             }
+
+            Divider()
+                .frame(height: 32)
+
+            Menu {
+                if selectedTab == .today {
+                    Button {
+                        openTodayPage()
+                    } label: {
+                        Label("今日に戻る", systemImage: "calendar")
+                    }
+
+                    Button {
+                        openCurrentYearPage()
+                    } label: {
+                        Label("今年のページを開く", systemImage: "calendar.badge.clock")
+                    }
+                } else if selectedTab == .photos {
+                    Button {
+                        presentPhotoQueue()
+                    } label: {
+                        Label(photoQueueMenuTitle, systemImage: "tray.full")
+                    }
+                    .accessibilityLabel("写真アップロードキュー")
+                    .accessibilityValue(photoQueueAccessibilityValue)
+                }
+
+                Divider()
+
+                Button {
+                    settingsDidSave = false
+                    showSettings = true
+                } label: {
+                    Label("設定", systemImage: "gearshape")
+                }
+            } label: {
+                Image(systemName: "ellipsis")
+                    .font(.system(size: 19, weight: .semibold))
+                    .foregroundColor(.secondary)
+                    .frame(width: 48, height: 50)
+                    .contentShape(Rectangle())
+            }
+            .accessibilityLabel("その他の操作")
+            .accessibilityHint("現在の画面で利用できる補助操作を表示します")
         }
         .padding(.horizontal, 8)
         .padding(.top, 4)
@@ -389,6 +362,13 @@ struct ContentView: View {
             return "未完了の項目はありません"
         }
         return "未完了 \(photoImportCoordinator.pendingBatches.count)件"
+    }
+
+    private var photoQueueMenuTitle: String {
+        guard !photoImportCoordinator.pendingBatches.isEmpty else {
+            return "写真アップロード"
+        }
+        return "写真アップロード（\(photoImportCoordinator.pendingBatches.count)件）"
     }
 
     private var photoImportStatusColor: Color {

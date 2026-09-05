@@ -31,12 +31,20 @@ final class CTDUITests: XCTestCase {
         XCTAssertTrue(app.buttons["Today"].exists)
         XCTAssertTrue(app.buttons["ToDo"].exists)
         XCTAssertTrue(app.buttons["Photos"].exists)
-        XCTAssertTrue(app.buttons["設定"].exists)
+        XCTAssertTrue(app.buttons["その他の操作"].exists)
+
+        app.buttons["その他の操作"].tap()
+        XCTAssertTrue(app.buttons["設定"].waitForExistence(timeout: 3))
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.3)).tap()
 
         app.buttons["Today"].tap()
-        XCTAssertTrue(app.buttons["日付ページを選択"].waitForExistence(timeout: 3))
+        app.buttons["その他の操作"].tap()
+        XCTAssertTrue(app.buttons["今日に戻る"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["今年のページを開く"].exists)
+        app.buttons["今日に戻る"].tap()
 
         app.buttons["Photos"].tap()
+        app.buttons["その他の操作"].tap()
         XCTAssertTrue(app.buttons["写真アップロードキュー"].waitForExistence(timeout: 3))
     }
 
