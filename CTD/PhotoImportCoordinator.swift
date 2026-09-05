@@ -52,6 +52,13 @@ final class PhotoImportCoordinator: ObservableObject {
             && (batch?.items.contains { $0.state == .uploaded } ?? false)
     }
 
+    var canRetryCommit: Bool {
+        !isWorking
+            && batch?.state == .commitUncertain
+            && (batch?.items.contains { $0.state == .uploaded } ?? false)
+            && commitHandler != nil
+    }
+
     var canDiscard: Bool {
         !isWorking && batch?.state != .committing
     }
@@ -162,6 +169,11 @@ final class PhotoImportCoordinator: ObservableObject {
         batch.state = .staged
         persist(batch)
         uploadPendingItems()
+    }
+
+    func retryUncertainCommit() {
+        guard canRetryCommit else { return }
+        commitSuccessfulItems()
     }
 
     func commitSuccessfulItems() {

@@ -264,6 +264,12 @@ final class CTDTests: XCTestCase {
         )
     }
 
+    func testSafePageAppendRetrySkipsConfirmedAndStopsWhenVerificationIsUnavailable() {
+        XCTAssertEqual(PageAppendRetryPolicy.action(for: .confirmed), .skip)
+        XCTAssertEqual(PageAppendRetryPolicy.action(for: .missing), .append)
+        XCTAssertEqual(PageAppendRetryPolicy.action(for: .unavailable), .stop)
+    }
+
     func testPhotoImportBodyBuilderChunksLargeSameDayBatch() {
         let items = (0..<5).map {
             makeUploadedPhoto(

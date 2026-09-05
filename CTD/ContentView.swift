@@ -77,6 +77,28 @@ enum PhotoImportScenePolicy {
     }
 }
 
+enum PageAppendVerificationResult: Equatable {
+    case confirmed
+    case missing
+    case unavailable
+}
+
+enum PageAppendRetryAction: Equatable {
+    case skip
+    case append
+    case stop
+}
+
+enum PageAppendRetryPolicy {
+    static func action(for result: PageAppendVerificationResult) -> PageAppendRetryAction {
+        switch result {
+        case .confirmed: return .skip
+        case .missing: return .append
+        case .unavailable: return .stop
+        }
+    }
+}
+
 final class WebViewModel: ObservableObject {
     private var webView: CustomWebView?
     private var initialURL: URL
@@ -168,23 +190,42 @@ final class WebViewModel: ObservableObject {
         }
         let webView = webViewForDisplay()
         webView.stopLoading()
-        webView.loadURL(first.pageURL) { [weak self, weak webView] success in
-            guard success, let webView else {
+        webView.checkPageText(
+            at: first.verificationURL,
+            containing: first.expectedFragments
+        ) { [weak self, weak webView] verification in
+            guard let self, let webView else {
                 completion(false)
                 return
             }
-            webView.waitForPageText(
-                at: first.verificationURL,
-                containing: first.expectedFragments
-            ) { verified in
-                guard verified, let self else {
-                    completion(false)
-                    return
-                }
+            switch PageAppendRetryPolicy.action(for: verification) {
+            case .skip:
                 self.loadPageAppendsSequentially(
                     Array(requests.dropFirst()),
                     completion: completion
                 )
+            case .append:
+                webView.loadURL(first.pageURL) { [weak self, weak webView] success in
+                    guard success, let self, let webView else {
+                        completion(false)
+                        return
+                    }
+                    webView.waitForPageText(
+                        at: first.verificationURL,
+                        containing: first.expectedFragments
+                    ) { verified in
+                        guard verified else {
+                            completion(false)
+                            return
+                        }
+                        self.loadPageAppendsSequentially(
+                            Array(requests.dropFirst()),
+                            completion: completion
+                        )
+                    }
+                }
+            case .stop:
+                completion(false)
             }
         }
     }
@@ -734,28 +775,8 @@ class CustomWebView: WKWebView, WKNavigationDelegate {
         deadline: Date,
         completion: @escaping (Bool) -> Void
     ) {
-        guard let urlLiteral = javaScriptLiteral(url.absoluteString),
-              let fragmentsLiteral = javaScriptLiteral(fragments) else {
-            completion(false)
-            return
-        }
-        let script = """
-        (async function() {
-            try {
-                const response = await fetch(\(urlLiteral), {
-                    credentials: 'include',
-                    cache: 'no-store'
-                });
-                if (!response.ok) return false;
-                const text = await response.text();
-                return \(fragmentsLiteral).every(fragment => text.includes(fragment));
-            } catch (_) {
-                return false;
-            }
-        })();
-        """
-        evaluateJavaScript(script) { [weak self] result, _ in
-            if (result as? NSNumber)?.boolValue == true {
+        checkPageText(at: url, containing: fragments) { [weak self] result in
+            if result == .confirmed {
                 completion(true)
                 return
             }
@@ -770,6 +791,44 @@ class CustomWebView: WKWebView, WKNavigationDelegate {
                     deadline: deadline,
                     completion: completion
                 )
+            }
+        }
+    }
+
+    func checkPageText(
+        at url: URL,
+        containing fragments: [String],
+        completion: @escaping (PageAppendVerificationResult) -> Void
+    ) {
+        guard !fragments.isEmpty,
+              let urlLiteral = javaScriptLiteral(url.absoluteString),
+              let fragmentsLiteral = javaScriptLiteral(fragments) else {
+            completion(.unavailable)
+            return
+        }
+        let script = """
+        (async function() {
+            try {
+                const response = await fetch(\(urlLiteral), {
+                    credentials: 'include',
+                    cache: 'no-store'
+                });
+                if (response.status === 404) return 'missing';
+                if (!response.ok) return 'unavailable';
+                const text = await response.text();
+                return \(fragmentsLiteral).every(fragment => text.includes(fragment))
+                    ? 'confirmed'
+                    : 'missing';
+            } catch (_) {
+                return 'unavailable';
+            }
+        })();
+        """
+        evaluateJavaScript(script) { result, _ in
+            switch result as? String {
+            case "confirmed": completion(.confirmed)
+            case "missing": completion(.missing)
+            default: completion(.unavailable)
             }
         }
     }
@@ -1046,6 +1105,12 @@ struct PhotoImportProgressView: View {
             if coordinator.canPause {
                 Button("一時停止") {
                     coordinator.pause()
+                }
+                .buttonStyle(.borderedProminent)
+            }
+            if coordinator.canRetryCommit {
+                Button("Cosense反映を再確認・再試行") {
+                    coordinator.retryUncertainCommit()
                 }
                 .buttonStyle(.borderedProminent)
             }
