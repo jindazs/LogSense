@@ -173,10 +173,10 @@ final class PhotoImportCoordinator: ObservableObject {
 
     func retryUncertainCommit() {
         guard canRetryCommit else { return }
-        commitSuccessfulItems()
+        commitSuccessfulItems(status: "Cosenseの反映状況を確認しています…")
     }
 
-    func commitSuccessfulItems() {
+    func commitSuccessfulItems(status: String = "Cosenseへ追加しています…") {
         guard !isWorking,
               activeCommitID == nil,
               var batch,
@@ -193,7 +193,7 @@ final class PhotoImportCoordinator: ObservableObject {
         batch.state = .committing
         persist(batch)
         isWorking = true
-        statusMessage = "Cosenseへ追加しています…"
+        statusMessage = status
 
         commitHandler(appends) { [weak self] success in
             Task { @MainActor in

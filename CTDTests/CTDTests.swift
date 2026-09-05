@@ -248,6 +248,10 @@ final class CTDTests: XCTestCase {
 
         XCTAssertEqual(requests.count, 2)
         XCTAssertEqual(
+            requests.map(\.contextURL.path),
+            ["/private-jindazs", "/private-jindazs"]
+        )
+        XCTAssertEqual(
             requests.map(\.pageURL.path),
             ["/private-jindazs/2026-06-14", "/private-jindazs/2026-06-01"]
         )
@@ -268,6 +272,32 @@ final class CTDTests: XCTestCase {
         XCTAssertEqual(PageAppendRetryPolicy.action(for: .confirmed), .skip)
         XCTAssertEqual(PageAppendRetryPolicy.action(for: .missing), .append)
         XCTAssertEqual(PageAppendRetryPolicy.action(for: .unavailable), .stop)
+    }
+
+    func testPageVerificationWaitsForCosenseWebContextToFinishLoading() {
+        let cosenseURL = URL(string: "https://scrapbox.io/jindazs")!
+        let apiURL = URL(string: "https://scrapbox.io/api/pages/jindazs/2026-06-14/text")!
+
+        XCTAssertTrue(PageVerificationContextPolicy.requiresBootstrap(
+            currentURL: nil,
+            isLoading: false,
+            targetURL: apiURL
+        ))
+        XCTAssertTrue(PageVerificationContextPolicy.requiresBootstrap(
+            currentURL: cosenseURL,
+            isLoading: true,
+            targetURL: apiURL
+        ))
+        XCTAssertTrue(PageVerificationContextPolicy.requiresBootstrap(
+            currentURL: URL(string: "about:blank"),
+            isLoading: false,
+            targetURL: apiURL
+        ))
+        XCTAssertFalse(PageVerificationContextPolicy.requiresBootstrap(
+            currentURL: cosenseURL,
+            isLoading: false,
+            targetURL: apiURL
+        ))
     }
 
     func testPhotoImportBodyBuilderChunksLargeSameDayBatch() {

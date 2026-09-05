@@ -1,6 +1,7 @@
 import Foundation
 
 struct ScrapboxPageAppendRequest: Equatable {
+    let contextURL: URL
     let pageURL: URL
     let verificationURL: URL
     let expectedFragments: [String]
@@ -35,7 +36,8 @@ enum ScrapboxURLBuilder {
         project: String,
         append: PhotoImportAppend
     ) -> ScrapboxPageAppendRequest? {
-        guard let pageURL = makePageURL(
+        guard let contextURL = makeProjectURL(project: project),
+        let pageURL = makePageURL(
             project: project,
             title: append.pageTitle,
             body: append.body
@@ -48,10 +50,25 @@ enum ScrapboxURLBuilder {
             return nil
         }
         return ScrapboxPageAppendRequest(
+            contextURL: contextURL,
             pageURL: pageURL,
             verificationURL: verificationURL,
             expectedFragments: append.verificationFragments
         )
+    }
+
+    static func makeProjectURL(project: String) -> URL? {
+        let project = project.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !project.isEmpty,
+              let encodedProject = encodePathComponent(project) else {
+            return nil
+        }
+
+        var components = URLComponents()
+        components.scheme = "https"
+        components.host = "scrapbox.io"
+        components.percentEncodedPath = "/\(encodedProject)"
+        return components.url
     }
 
     static func makePageTextAPIURL(project: String, title: String) -> URL? {

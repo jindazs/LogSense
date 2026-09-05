@@ -99,6 +99,22 @@ enum PageAppendRetryPolicy {
     }
 }
 
+enum PageVerificationContextPolicy {
+    static func requiresBootstrap(
+        currentURL: URL?,
+        isLoading: Bool,
+        targetURL: URL
+    ) -> Bool {
+        guard !isLoading,
+              let currentURL,
+              currentURL.scheme?.lowercased() == targetURL.scheme?.lowercased(),
+              currentURL.host?.lowercased() == targetURL.host?.lowercased() else {
+            return true
+        }
+        return false
+    }
+}
+
 final class WebViewModel: ObservableObject {
     private var webView: CustomWebView?
     private var initialURL: URL
@@ -189,43 +205,47 @@ final class WebViewModel: ObservableObject {
             return
         }
         let webView = webViewForDisplay()
-        webView.stopLoading()
-        webView.checkPageText(
-            at: first.verificationURL,
-            containing: first.expectedFragments
-        ) { [weak self, weak webView] verification in
-            guard let self, let webView else {
+        webView.prepareForPageVerification(
+            contextURL: first.contextURL,
+            targetURL: first.verificationURL
+        ) { [weak self, weak webView] prepared in
+            guard prepared, let self, let webView else {
                 completion(false)
                 return
             }
-            switch PageAppendRetryPolicy.action(for: verification) {
-            case .skip:
-                self.loadPageAppendsSequentially(
-                    Array(requests.dropFirst()),
-                    completion: completion
-                )
-            case .append:
-                webView.loadURL(first.pageURL) { [weak self, weak webView] success in
-                    guard success, let self, let webView else {
-                        completion(false)
-                        return
-                    }
-                    webView.waitForPageText(
-                        at: first.verificationURL,
-                        containing: first.expectedFragments
-                    ) { verified in
-                        guard verified else {
+            webView.checkPageText(
+                at: first.verificationURL,
+                containing: first.expectedFragments
+            ) { verification in
+                switch PageAppendRetryPolicy.action(for: verification) {
+                case .skip:
+                    self.loadPageAppendsSequentially(
+                        Array(requests.dropFirst()),
+                        completion: completion
+                    )
+                case .append:
+                    webView.loadURL(first.pageURL) { [weak self, weak webView] success in
+                        guard success, let self, let webView else {
                             completion(false)
                             return
                         }
-                        self.loadPageAppendsSequentially(
-                            Array(requests.dropFirst()),
-                            completion: completion
-                        )
+                        webView.waitForPageText(
+                            at: first.verificationURL,
+                            containing: first.expectedFragments
+                        ) { verified in
+                            guard verified else {
+                                completion(false)
+                                return
+                            }
+                            self.loadPageAppendsSequentially(
+                                Array(requests.dropFirst()),
+                                completion: completion
+                            )
+                        }
                     }
+                case .stop:
+                    completion(false)
                 }
-            case .stop:
-                completion(false)
             }
         }
     }
@@ -750,6 +770,23 @@ class CustomWebView: WKWebView, WKNavigationDelegate {
         }
         trackedNavigation = navigation
         loadCompletion = completion
+    }
+
+    func prepareForPageVerification(
+        contextURL: URL,
+        targetURL: URL,
+        completion: @escaping (Bool) -> Void
+    ) {
+        guard PageVerificationContextPolicy.requiresBootstrap(
+            currentURL: url,
+            isLoading: isLoading,
+            targetURL: targetURL
+        ) else {
+            completion(true)
+            return
+        }
+        stopLoading()
+        loadURL(contextURL, completion: completion)
     }
 
     func waitForPageText(
