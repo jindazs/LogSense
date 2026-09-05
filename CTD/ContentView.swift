@@ -247,11 +247,11 @@ struct ContentView: View {
                 Button {
                     select(tab)
                 } label: {
-                    VStack(spacing: 3) {
+                    VStack(spacing: 2) {
                         ZStack(alignment: .topTrailing) {
                             Image(systemName: isSelected ? tab.selectedSymbolName : tab.symbolName)
-                                .font(.system(size: 18, weight: .semibold))
-                                .frame(height: 22)
+                                .font(.system(size: 17, weight: .semibold))
+                                .frame(height: 20)
 
                             if tab == .photos && !photoImportCoordinator.pendingBatches.isEmpty {
                                 Circle()
@@ -267,7 +267,7 @@ struct ContentView: View {
                     }
                     .foregroundColor(isSelected ? .accentColor : .secondary)
                     .frame(maxWidth: .infinity)
-                    .frame(height: 50)
+                    .frame(height: 44)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -287,7 +287,7 @@ struct ContentView: View {
                 Image(systemName: "ellipsis")
                     .font(.system(size: 19, weight: .semibold))
                     .foregroundColor(showAuxiliaryMenu ? .accentColor : .secondary)
-                    .frame(width: 48, height: 50)
+                    .frame(width: 48, height: 44)
                     .background {
                         if showAuxiliaryMenu {
                             Circle()
@@ -307,7 +307,7 @@ struct ContentView: View {
             )
         }
         .padding(.horizontal, 8)
-        .padding(.top, 4)
+        .padding(.top, 2)
         .background(Color(uiColor: .secondarySystemBackground).ignoresSafeArea(edges: .bottom))
     }
 
