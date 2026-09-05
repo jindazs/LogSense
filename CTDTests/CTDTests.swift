@@ -12,6 +12,28 @@ import UIKit
 @testable import CTD
 
 final class CTDTests: XCTestCase {
+    func testPhotoImportWaitsForActiveSceneBeforeStartingSharedBatch() {
+        XCTAssertEqual(
+            PhotoImportScenePolicy.action(for: .inactive, hasPendingImport: true),
+            .wait
+        )
+        XCTAssertEqual(
+            PhotoImportScenePolicy.action(for: .background, hasPendingImport: true),
+            .wait
+        )
+        XCTAssertEqual(
+            PhotoImportScenePolicy.action(for: .active, hasPendingImport: true),
+            .startPendingImport
+        )
+    }
+
+    func testPhotoImportStillPausesWhenAppLeavesForegroundWithoutSharedBatch() {
+        XCTAssertEqual(
+            PhotoImportScenePolicy.action(for: .inactive, hasPendingImport: false),
+            .pauseCurrentImport
+        )
+    }
+
     @MainActor
     func testPhotoImportCoordinatorIgnoresDuplicateStartForActiveBatch() {
         let batchID = UUID()

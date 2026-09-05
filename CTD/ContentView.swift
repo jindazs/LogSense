@@ -55,6 +55,21 @@ enum AppTab: CaseIterable {
     }
 }
 
+enum PhotoImportSceneAction: Equatable {
+    case startPendingImport
+    case pauseCurrentImport
+    case wait
+}
+
+enum PhotoImportScenePolicy {
+    static func action(for phase: ScenePhase, hasPendingImport: Bool) -> PhotoImportSceneAction {
+        if phase == .active {
+            return hasPendingImport ? .startPendingImport : .wait
+        }
+        return hasPendingImport ? .wait : .pauseCurrentImport
+    }
+}
+
 final class WebViewModel: ObservableObject {
     private var webView: CustomWebView?
     private var initialURL: URL
@@ -143,6 +158,7 @@ struct ContentView: View {
     @State private var showSettings: Bool = false
     @State private var showPhotoQueue: Bool = false
     @State private var showAuxiliaryMenu: Bool = false
+    @State private var pendingPhotoImportBatchID: UUID?
     @State private var settingsDidSave: Bool = false
     @State private var selectedTab: AppTab = .home
     @State private var currentDate = ""
@@ -210,7 +226,7 @@ struct ContentView: View {
             photoImportCoordinator.refreshQueue()
             if !photoImportCoordinator.isPresented,
                let pending = try? PhotoImportStore.shared().pendingBatches().first {
-                beginPhotoImport(batchID: pending.id)
+                requestPhotoImport(batchID: pending.id)
             }
         }
         .sheet(isPresented: $showSettings, onDismiss: {
@@ -231,8 +247,16 @@ struct ContentView: View {
             }
         }
         .onChange(of: scenePhase) { phase in
-            if phase != .active {
+            switch PhotoImportScenePolicy.action(
+                for: phase,
+                hasPendingImport: pendingPhotoImportBatchID != nil
+            ) {
+            case .startPendingImport:
+                startPendingPhotoImportIfActive()
+            case .pauseCurrentImport:
                 photoImportCoordinator.pause()
+            case .wait:
+                break
             }
         }
         .onOpenURL { url in
@@ -535,7 +559,7 @@ struct ContentView: View {
                 LogSenseLogger.debug("[LogSense] invalid photo batch ID")
                 return
             }
-            beginPhotoImport(batchID: batchID)
+            requestPhotoImport(batchID: batchID)
             return
         }
 
@@ -586,6 +610,21 @@ struct ContentView: View {
         } catch {
             LogSenseLogger.debug("[LogSense] photo batch load failed: \(error.localizedDescription)")
         }
+    }
+
+    private func requestPhotoImport(batchID: UUID) {
+        pendingPhotoImportBatchID = batchID
+        startPendingPhotoImportIfActive()
+    }
+
+    private func startPendingPhotoImportIfActive() {
+        guard PhotoImportScenePolicy.action(
+            for: scenePhase,
+            hasPendingImport: pendingPhotoImportBatchID != nil
+        ) == .startPendingImport,
+              let batchID = pendingPhotoImportBatchID else { return }
+        pendingPhotoImportBatchID = nil
+        beginPhotoImport(batchID: batchID)
     }
 }
 
