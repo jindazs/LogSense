@@ -9,7 +9,7 @@ https://scrapbox.io/jindazs/LogSense
 ## 主な機能
 
 - **タブ切り替え**
-  - 下部のラベル付きタブバーで 4 種類のページ（Home, Today, ToDo, Photos）を切り替え
+  - Webページと重ならない下部の固定タブバーで 4 種類のページ（Home, Today, ToDo, Photos）を切り替え
     - ToDo: プロジェクト名/ToDo/
     - Home: プロジェクト名/
     - Today: プロジェクト名/YYYY-MM-DD

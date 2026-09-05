@@ -161,33 +161,27 @@ struct ContentView: View {
     )
 
     var body: some View {
-        ZStack {
+        VStack(spacing: 0) {
+            topControls
+            Divider()
+
             if selectedTab == .todo {
                 WebViewWrapper(webViewModel: todoWebViewModel)
-                    .ignoresSafeArea(edges: .bottom)
             } else if selectedTab == .home {
                 WebViewWrapper(webViewModel: mainWebViewModel)
-                    .ignoresSafeArea(edges: .bottom)
             } else if selectedTab == .today {
                 WebViewWrapper(webViewModel: dateWebViewModel)
-                    .ignoresSafeArea(edges: .bottom)
             } else if selectedTab == .photos {
                 WebViewWrapper(webViewModel: photoWebViewModel)
-                    .ignoresSafeArea(edges: .bottom)
             }
 
-            VStack(spacing: 12) {
-                topControls
-                Spacer(minLength: 0)
-
-                if selectedTab == .photos && shouldShowPhotoImportStatus {
-                    photoImportStatus
-                }
-
-                bottomTabBar
+            if selectedTab == .photos && shouldShowPhotoImportStatus {
+                Divider()
+                photoImportStatus
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
+
+            Divider()
+            bottomTabBar
         }
         .onAppear {
             projectName = groupDefaults.string(forKey: UserDefaultsKeys.projectName) ?? ""
@@ -250,8 +244,8 @@ struct ContentView: View {
                     Label("日付", systemImage: "calendar")
                         .font(.subheadline.weight(.semibold))
                         .padding(.horizontal, 13)
-                        .frame(height: 40)
-                        .background(.ultraThinMaterial, in: Capsule())
+                        .frame(height: 44)
+                        .contentShape(Rectangle())
                 }
                 .accessibilityLabel("日付ページを選択")
             } else if selectedTab == .photos {
@@ -271,8 +265,8 @@ struct ContentView: View {
                     }
                     .font(.subheadline.weight(.semibold))
                     .padding(.horizontal, 13)
-                    .frame(height: 40)
-                    .background(.ultraThinMaterial, in: Capsule())
+                    .frame(height: 44)
+                    .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("写真アップロードキュー")
@@ -287,13 +281,16 @@ struct ContentView: View {
             } label: {
                 Image(systemName: "gearshape.fill")
                     .font(.system(size: 17, weight: .semibold))
-                    .frame(width: 40, height: 40)
-                    .background(.ultraThinMaterial, in: Circle())
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .accessibilityLabel("設定")
         }
         .foregroundColor(.accentColor)
+        .padding(.horizontal, 8)
+        .frame(height: 48)
+        .background(Color(uiColor: .systemBackground))
     }
 
     private var bottomTabBar: some View {
@@ -324,10 +321,6 @@ struct ContentView: View {
                     .foregroundColor(isSelected ? .accentColor : .secondary)
                     .frame(maxWidth: .infinity)
                     .frame(height: 50)
-                    .background(
-                        Capsule()
-                            .fill(isSelected ? Color.accentColor.opacity(0.14) : Color.clear)
-                    )
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -336,13 +329,9 @@ struct ContentView: View {
                 .accessibilityHint(isSelected ? "もう一度押すと最初のページに戻ります" : "")
             }
         }
-        .padding(4)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .stroke(Color.primary.opacity(0.08), lineWidth: 0.5)
-        )
-        .shadow(color: .black.opacity(0.12), radius: 12, y: 5)
+        .padding(.horizontal, 8)
+        .padding(.top, 4)
+        .background(Color(uiColor: .secondarySystemBackground).ignoresSafeArea(edges: .bottom))
     }
 
     private var photoImportStatus: some View {
@@ -376,11 +365,7 @@ struct ContentView: View {
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 11)
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .stroke(photoImportStatusColor.opacity(0.25), lineWidth: 1)
-            )
+            .background(Color(uiColor: .secondarySystemBackground))
         }
         .buttonStyle(.plain)
         .accessibilityLabel("写真アップロードの状態")
