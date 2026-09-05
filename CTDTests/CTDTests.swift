@@ -29,9 +29,23 @@ final class CTDTests: XCTestCase {
 
     func testPhotoImportStillPausesWhenAppLeavesForegroundWithoutSharedBatch() {
         XCTAssertEqual(
-            PhotoImportScenePolicy.action(for: .inactive, hasPendingImport: false),
+            PhotoImportScenePolicy.action(for: .background, hasPendingImport: false),
             .pauseCurrentImport
         )
+        XCTAssertEqual(
+            PhotoImportScenePolicy.action(for: .inactive, hasPendingImport: false),
+            .wait
+        )
+    }
+
+    func testPhotoImportAutomaticallyStartsOnlyFreshOrInterruptedUploads() {
+        XCTAssertTrue(PhotoImportScenePolicy.canStartAutomatically(.staging))
+        XCTAssertTrue(PhotoImportScenePolicy.canStartAutomatically(.staged))
+        XCTAssertTrue(PhotoImportScenePolicy.canStartAutomatically(.uploading))
+        XCTAssertFalse(PhotoImportScenePolicy.canStartAutomatically(.paused))
+        XCTAssertFalse(PhotoImportScenePolicy.canStartAutomatically(.awaitingDecision))
+        XCTAssertFalse(PhotoImportScenePolicy.canStartAutomatically(.commitUncertain))
+        XCTAssertFalse(PhotoImportScenePolicy.canStartAutomatically(.completed))
     }
 
     @MainActor

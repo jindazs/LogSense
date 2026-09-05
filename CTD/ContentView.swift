@@ -66,7 +66,14 @@ enum PhotoImportScenePolicy {
         if phase == .active {
             return hasPendingImport ? .startPendingImport : .wait
         }
-        return hasPendingImport ? .wait : .pauseCurrentImport
+        if phase == .background {
+            return hasPendingImport ? .wait : .pauseCurrentImport
+        }
+        return .wait
+    }
+
+    static func canStartAutomatically(_ state: PhotoImportBatchState) -> Bool {
+        state == .staging || state == .staged || state == .uploading
     }
 }
 
@@ -224,10 +231,7 @@ struct ContentView: View {
             let photoURL = URL(string: "https://scrapbox.io/\(photoProjectName)")!
             photoWebViewModel.updateInitialURL(photoURL)
             photoImportCoordinator.refreshQueue()
-            if !photoImportCoordinator.isPresented,
-               let pending = try? PhotoImportStore.shared().pendingBatches().first {
-                requestPhotoImport(batchID: pending.id)
-            }
+            discoverAndStartPendingPhotoImport()
         }
         .sheet(isPresented: $showSettings, onDismiss: {
             if settingsDidSave {
@@ -247,6 +251,9 @@ struct ContentView: View {
             }
         }
         .onChange(of: scenePhase) { phase in
+            if phase == .active {
+                discoverAndStartPendingPhotoImport()
+            }
             switch PhotoImportScenePolicy.action(
                 for: phase,
                 hasPendingImport: pendingPhotoImportBatchID != nil
@@ -258,6 +265,9 @@ struct ContentView: View {
             case .wait:
                 break
             }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)) { _ in
+            discoverAndStartPendingPhotoImport()
         }
         .onOpenURL { url in
             handleIncomingURL(url)
@@ -617,9 +627,22 @@ struct ContentView: View {
         startPendingPhotoImportIfActive()
     }
 
+    private func discoverAndStartPendingPhotoImport() {
+        guard !photoImportCoordinator.isWorking else { return }
+        if pendingPhotoImportBatchID == nil,
+           let batches = try? PhotoImportStore.shared().pendingBatches(),
+           let batch = batches.first(where: {
+               PhotoImportScenePolicy.canStartAutomatically($0.state)
+           }) {
+            pendingPhotoImportBatchID = batch.id
+        }
+        startPendingPhotoImportIfActive()
+    }
+
     private func startPendingPhotoImportIfActive() {
+        let applicationIsActive = UIApplication.shared.applicationState == .active
         guard PhotoImportScenePolicy.action(
-            for: scenePhase,
+            for: applicationIsActive ? .active : scenePhase,
             hasPendingImport: pendingPhotoImportBatchID != nil
         ) == .startPendingImport,
               let batchID = pendingPhotoImportBatchID else { return }
