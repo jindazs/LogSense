@@ -23,6 +23,8 @@ final class ShareViewController: UIViewController {
     private var stagingStore: PhotoImportStore?
     private let stagingStateLock = NSLock()
     private var stagingWasCancelled = false
+    private var destinationPickerContainer: UIView?
+    private var destinationPickerCard: UIView?
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -137,30 +139,231 @@ final class ShareViewController: UIViewController {
         }
 
         DispatchQueue.main.async {
-            let picker = UIAlertController(
-                title: "共有先を選択",
-                message: "\(providers.count)枚の写真をLogSenseへ取り込みます。",
-                preferredStyle: .actionSheet
+            self.showPhotoDestinationPicker(
+                photoCount: providers.count,
+                primaryProject: primaryProject,
+                photoProject: photoProject,
+                onPrimary: { [weak self] in
+                    self?.stageImages(
+                        providers: providers,
+                        destination: .primary,
+                        projectName: primaryProject
+                    )
+                },
+                onPhoto: { [weak self] in
+                    self?.stageImages(
+                        providers: providers,
+                        destination: .photo,
+                        projectName: photoProject
+                    )
+                }
             )
-            picker.addAction(UIAlertAction(title: "メイン：\(primaryProject)", style: .default) { _ in
-                self.stageImages(providers: providers, destination: .primary, projectName: primaryProject)
-            })
-            picker.addAction(UIAlertAction(title: "写真：\(photoProject)", style: .default) { _ in
-                self.stageImages(providers: providers, destination: .photo, projectName: photoProject)
-            })
-            picker.addAction(UIAlertAction(title: "キャンセル", style: .cancel) { _ in
-                self.extensionContext?.completeRequest(returningItems: nil)
-            })
-            if let popover = picker.popoverPresentationController {
-                popover.sourceView = self.view
-                popover.sourceRect = CGRect(
-                    x: self.view.bounds.midX,
-                    y: self.view.bounds.midY,
-                    width: 1,
-                    height: 1
-                )
+        }
+    }
+
+    private func showPhotoDestinationPicker(
+        photoCount: Int,
+        primaryProject: String,
+        photoProject: String,
+        onPrimary: @escaping () -> Void,
+        onPhoto: @escaping () -> Void
+    ) {
+        destinationPickerContainer?.removeFromSuperview()
+
+        let container = UIView()
+        container.translatesAutoresizingMaskIntoConstraints = false
+        container.backgroundColor = UIColor.black.withAlphaComponent(0.18)
+
+        let card = UIVisualEffectView(effect: UIBlurEffect(style: .systemMaterial))
+        card.translatesAutoresizingMaskIntoConstraints = false
+        card.layer.cornerRadius = 24
+        card.layer.cornerCurve = .continuous
+        card.clipsToBounds = true
+        card.layer.borderWidth = 0.5
+        card.layer.borderColor = UIColor.separator.withAlphaComponent(0.25).cgColor
+
+        let cardShadow = UIView()
+        cardShadow.translatesAutoresizingMaskIntoConstraints = false
+        cardShadow.backgroundColor = .clear
+        cardShadow.layer.shadowColor = UIColor.black.cgColor
+        cardShadow.layer.shadowOpacity = 0.24
+        cardShadow.layer.shadowRadius = 24
+        cardShadow.layer.shadowOffset = CGSize(width: 0, height: 12)
+
+        let icon = UIImageView(image: UIImage(systemName: "photo.stack.fill"))
+        icon.translatesAutoresizingMaskIntoConstraints = false
+        icon.tintColor = .systemBlue
+        icon.contentMode = .scaleAspectFit
+        icon.preferredSymbolConfiguration = UIImage.SymbolConfiguration(pointSize: 24, weight: .semibold)
+
+        let iconBackground = UIView()
+        iconBackground.translatesAutoresizingMaskIntoConstraints = false
+        iconBackground.backgroundColor = UIColor.systemBlue.withAlphaComponent(0.12)
+        iconBackground.layer.cornerRadius = 24
+        iconBackground.addSubview(icon)
+
+        let titleLabel = UILabel()
+        titleLabel.text = "写真の共有先"
+        titleLabel.font = .preferredFont(forTextStyle: .title2)
+        titleLabel.adjustsFontForContentSizeCategory = true
+        titleLabel.textAlignment = .center
+
+        let countText = photoCount == 1 ? "1枚の写真" : "\(photoCount)枚の写真"
+        let messageLabel = UILabel()
+        messageLabel.text = "\(countText)を取り込む場所を選択してください"
+        messageLabel.font = .preferredFont(forTextStyle: .subheadline)
+        messageLabel.adjustsFontForContentSizeCategory = true
+        messageLabel.textColor = .secondaryLabel
+        messageLabel.textAlignment = .center
+        messageLabel.numberOfLines = 0
+
+        let primaryButton = makeDestinationButton(
+            title: "メイン",
+            projectName: primaryProject,
+            symbolName: "house.fill",
+            color: .systemBlue
+        ) { [weak self] in
+            self?.dismissDestinationPicker(completion: onPrimary)
+        }
+
+        let photoButton = makeDestinationButton(
+            title: "写真",
+            projectName: photoProject,
+            symbolName: "photo.on.rectangle.angled",
+            color: .systemIndigo
+        ) { [weak self] in
+            self?.dismissDestinationPicker(completion: onPhoto)
+        }
+
+        var cancelConfiguration = UIButton.Configuration.plain()
+        cancelConfiguration.title = "キャンセル"
+        cancelConfiguration.baseForegroundColor = .secondaryLabel
+        let cancelButton = UIButton(configuration: cancelConfiguration)
+        cancelButton.addAction(UIAction { [weak self] _ in
+            self?.dismissDestinationPicker {
+                self?.extensionContext?.completeRequest(returningItems: nil)
             }
-            self.present(picker, animated: true)
+        }, for: .touchUpInside)
+        cancelButton.accessibilityHint = "写真の共有を中止します"
+
+        let stack = UIStackView(arrangedSubviews: [
+            iconBackground,
+            titleLabel,
+            messageLabel,
+            primaryButton,
+            photoButton,
+            cancelButton
+        ])
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        stack.axis = .vertical
+        stack.alignment = .fill
+        stack.spacing = 12
+        stack.setCustomSpacing(8, after: titleLabel)
+        stack.setCustomSpacing(24, after: messageLabel)
+        stack.setCustomSpacing(8, after: primaryButton)
+
+        view.addSubview(container)
+        container.addSubview(cardShadow)
+        cardShadow.addSubview(card)
+        card.contentView.addSubview(stack)
+
+        let preferredCardWidth = cardShadow.widthAnchor.constraint(
+            equalTo: container.widthAnchor,
+            constant: -40
+        )
+        preferredCardWidth.priority = .defaultHigh
+
+        NSLayoutConstraint.activate([
+            container.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            container.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            container.topAnchor.constraint(equalTo: view.topAnchor),
+            container.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+
+            cardShadow.centerXAnchor.constraint(equalTo: container.centerXAnchor),
+            cardShadow.centerYAnchor.constraint(equalTo: container.centerYAnchor),
+            cardShadow.leadingAnchor.constraint(greaterThanOrEqualTo: container.leadingAnchor, constant: 20),
+            cardShadow.trailingAnchor.constraint(lessThanOrEqualTo: container.trailingAnchor, constant: -20),
+            cardShadow.widthAnchor.constraint(lessThanOrEqualToConstant: 360),
+            preferredCardWidth,
+
+            card.leadingAnchor.constraint(equalTo: cardShadow.leadingAnchor),
+            card.trailingAnchor.constraint(equalTo: cardShadow.trailingAnchor),
+            card.topAnchor.constraint(equalTo: cardShadow.topAnchor),
+            card.bottomAnchor.constraint(equalTo: cardShadow.bottomAnchor),
+
+            stack.leadingAnchor.constraint(equalTo: card.contentView.leadingAnchor, constant: 20),
+            stack.trailingAnchor.constraint(equalTo: card.contentView.trailingAnchor, constant: -20),
+            stack.topAnchor.constraint(equalTo: card.contentView.topAnchor, constant: 24),
+            stack.bottomAnchor.constraint(equalTo: card.contentView.bottomAnchor, constant: -14),
+
+            iconBackground.widthAnchor.constraint(equalToConstant: 48),
+            iconBackground.heightAnchor.constraint(equalToConstant: 48),
+            icon.leadingAnchor.constraint(equalTo: iconBackground.leadingAnchor, constant: 12),
+            icon.trailingAnchor.constraint(equalTo: iconBackground.trailingAnchor, constant: -12),
+            icon.topAnchor.constraint(equalTo: iconBackground.topAnchor, constant: 12),
+            icon.bottomAnchor.constraint(equalTo: iconBackground.bottomAnchor, constant: -12),
+            primaryButton.heightAnchor.constraint(greaterThanOrEqualToConstant: 64),
+            photoButton.heightAnchor.constraint(greaterThanOrEqualToConstant: 64),
+            cancelButton.heightAnchor.constraint(equalToConstant: 44)
+        ])
+
+        destinationPickerContainer = container
+        destinationPickerCard = cardShadow
+        container.alpha = 0
+        cardShadow.transform = CGAffineTransform(translationX: 0, y: 12).scaledBy(x: 0.96, y: 0.96)
+        UIView.animate(
+            withDuration: 0.24,
+            delay: 0,
+            usingSpringWithDamping: 0.86,
+            initialSpringVelocity: 0.4,
+            options: [.curveEaseOut]
+        ) {
+            container.alpha = 1
+            cardShadow.transform = .identity
+        }
+    }
+
+    private func makeDestinationButton(
+        title: String,
+        projectName: String,
+        symbolName: String,
+        color: UIColor,
+        action: @escaping () -> Void
+    ) -> UIButton {
+        var configuration = UIButton.Configuration.tinted()
+        configuration.title = title
+        configuration.subtitle = projectName
+        configuration.image = UIImage(systemName: symbolName)
+        configuration.imagePlacement = .leading
+        configuration.imagePadding = 14
+        configuration.titleAlignment = .leading
+        configuration.cornerStyle = .large
+        configuration.baseForegroundColor = color
+        configuration.baseBackgroundColor = color
+        configuration.contentInsets = NSDirectionalEdgeInsets(top: 10, leading: 16, bottom: 10, trailing: 16)
+
+        let button = UIButton(configuration: configuration)
+        button.contentHorizontalAlignment = .leading
+        button.addAction(UIAction { _ in action() }, for: .touchUpInside)
+        button.accessibilityLabel = "\(title)、\(projectName)"
+        button.accessibilityHint = "このプロジェクトへ写真を取り込みます"
+        return button
+    }
+
+    private func dismissDestinationPicker(completion: @escaping () -> Void) {
+        guard let container = destinationPickerContainer else {
+            completion()
+            return
+        }
+        let card = destinationPickerCard
+        destinationPickerContainer = nil
+        destinationPickerCard = nil
+        UIView.animate(withDuration: 0.16, animations: {
+            container.alpha = 0
+            card?.transform = CGAffineTransform(translationX: 0, y: 8).scaledBy(x: 0.98, y: 0.98)
+        }) { _ in
+            container.removeFromSuperview()
+            completion()
         }
     }
 
