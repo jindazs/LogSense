@@ -21,11 +21,38 @@ func sharedDefaults() -> UserDefaults {
 
 let groupDefaults = sharedDefaults()
 
-enum AppTab {
-    case todo
+enum AppTab: CaseIterable {
     case home
     case today
+    case todo
     case photos
+
+    var title: String {
+        switch self {
+        case .todo: return "ToDo"
+        case .home: return "Home"
+        case .today: return "Today"
+        case .photos: return "Photos"
+        }
+    }
+
+    var symbolName: String {
+        switch self {
+        case .todo: return "list.bullet"
+        case .home: return "house"
+        case .today: return "calendar"
+        case .photos: return "photo.on.rectangle"
+        }
+    }
+
+    var selectedSymbolName: String {
+        switch self {
+        case .todo: return "list.bullet"
+        case .home: return "house.fill"
+        case .today: return "calendar.circle.fill"
+        case .photos: return "photo.on.rectangle.fill"
+        }
+    }
 }
 
 final class WebViewModel: ObservableObject {
@@ -134,7 +161,7 @@ struct ContentView: View {
     )
 
     var body: some View {
-        ZStack(alignment: .bottom) {
+        ZStack {
             if selectedTab == .todo {
                 WebViewWrapper(webViewModel: todoWebViewModel)
                     .ignoresSafeArea(edges: .bottom)
@@ -149,126 +176,18 @@ struct ContentView: View {
                     .ignoresSafeArea(edges: .bottom)
             }
 
-            ZStack {
-                Capsule()
-                    .fill(Color.white.opacity(0.8))
-                    .shadow(radius: 5)
-                    .frame(height: 50)
-                HStack {
-                    Spacer()
-                    // 以下は元のHStack内の3つのButton定義をそのまま貼り付け
-                    Button(action: {
-                        selectedTab = .todo
-                    }) {
-                        Image(systemName: "list.bullet")
-                            .resizable()
-                            .scaledToFit()
-                            .frame(width: 12.5, height: 12.5)
-                            .padding(8)
-                            .background(Circle().fill(Color.white.opacity(0.9)))
-                            .overlay(
-                                Circle().stroke(selectedTab == .todo ? Color.gray.opacity(0.3) : Color.clear, lineWidth: 2)
-                            )
-                            .shadow(radius: 4)
-                    }
-                    .onTapGesture(count: 2) {
-                        todoWebViewModel.resetToInitialPage()
-                    }
-                    Spacer()
-                    Button(action: {
-                        selectedTab = .home
-                    }) {
-                        Image(systemName: "house.fill")
-                            .resizable()
-                            .scaledToFit()
-                            .frame(width: 12.5, height: 12.5)
-                            .padding(8)
-                            .background(Circle().fill(Color.white.opacity(0.9)))
-                            .overlay(
-                                Circle().stroke(selectedTab == .home ? Color.gray.opacity(0.3) : Color.clear, lineWidth: 2)
-                            )
-                            .shadow(radius: 4)
-                    }
-                    .onTapGesture(count: 2) {
-                        mainWebViewModel.resetToInitialPage()
-                    }
-                    .onTapGesture(count: 3) {
-                        settingsDidSave = false
-                        showSettings = true
-                    }
-                    Spacer()
-                    Button(action: {
-                        selectedTab = .today
-                    }) {
-                        Image(systemName: "calendar")
-                            .resizable()
-                            .scaledToFit()
-                            .frame(width: 12.5, height: 12.5)
-                            .padding(8)
-                            .background(Circle().fill(Color.white.opacity(0.9)))
-                            .overlay(
-                                Circle().stroke(selectedTab == .today ? Color.gray.opacity(0.3) : Color.clear, lineWidth: 2)
-                            )
-                            .shadow(radius: 4)
-                    }
-                    .onTapGesture(count: 2) {
-                        currentDate = getCurrentDate()
-                        let dateUrl = URL(string: "https://scrapbox.io/\(projectName)/\(currentDate)")!
-                        dateWebViewModel.loadURL(dateUrl)
-                    }
-                    .onTapGesture(count: 3) {
-                        let year = Calendar.current.component(.year, from: Date())
-                        let yearString = "\(year)年"
-                        if let url = URL(string: "https://scrapbox.io/\(projectName)/\(yearString)") {
-                            dateWebViewModel.loadURL(url)
-                        }
-                    }
-                    Spacer()
-                    Button(action: {
-                        selectedTab = .photos
-                    }) {
-                        Image(systemName: "photo.on.rectangle.angled")
-                            .resizable()
-                            .scaledToFit()
-                            .frame(width: 12.5, height: 12.5)
-                            .padding(8)
-                            .background(Circle().fill(Color.white.opacity(0.9)))
-                            .overlay(
-                                Circle().stroke(selectedTab == .photos ? Color.gray.opacity(0.3) : Color.clear, lineWidth: 2)
-                            )
-                            .shadow(radius: 4)
-                    }
-                    .onTapGesture(count: 2) {
-                        photoWebViewModel.resetToInitialPage()
-                    }
-                    Spacer()
-                    Button(action: {
-                        photoImportCoordinator.refreshQueue()
-                        showPhotoQueue = true
-                    }) {
-                        ZStack(alignment: .topTrailing) {
-                            Image(systemName: "tray.full")
-                                .resizable()
-                                .scaledToFit()
-                                .frame(width: 12.5, height: 12.5)
-                                .padding(8)
-                                .background(Circle().fill(Color.white.opacity(0.9)))
-                                .shadow(radius: 4)
-                            if !photoImportCoordinator.pendingBatches.isEmpty {
-                                Text("\(photoImportCoordinator.pendingBatches.count)")
-                                    .font(.system(size: 9, weight: .bold))
-                                    .foregroundColor(.white)
-                                    .padding(4)
-                                    .background(Circle().fill(Color.red))
-                                    .offset(x: 4, y: -4)
-                            }
-                        }
-                    }
-                    .accessibilityLabel("写真アップロードキュー")
-                    Spacer()
+            VStack(spacing: 12) {
+                topControls
+                Spacer(minLength: 0)
+
+                if selectedTab == .photos && shouldShowPhotoImportStatus {
+                    photoImportStatus
                 }
+
+                bottomTabBar
             }
-            .padding(.bottom, 8)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
         }
         .onAppear {
             projectName = groupDefaults.string(forKey: UserDefaultsKeys.projectName) ?? ""
@@ -310,6 +229,229 @@ struct ContentView: View {
         .onOpenURL { url in
             handleIncomingURL(url)
         }
+    }
+
+    private var topControls: some View {
+        HStack(spacing: 8) {
+            if selectedTab == .today {
+                Menu {
+                    Button {
+                        openTodayPage()
+                    } label: {
+                        Label("今日に戻る", systemImage: "calendar")
+                    }
+
+                    Button {
+                        openCurrentYearPage()
+                    } label: {
+                        Label("今年のページを開く", systemImage: "calendar.badge.clock")
+                    }
+                } label: {
+                    Label("日付", systemImage: "calendar")
+                        .font(.subheadline.weight(.semibold))
+                        .padding(.horizontal, 13)
+                        .frame(height: 40)
+                        .background(.ultraThinMaterial, in: Capsule())
+                }
+                .accessibilityLabel("日付ページを選択")
+            } else if selectedTab == .photos {
+                Button {
+                    presentPhotoQueue()
+                } label: {
+                    HStack(spacing: 7) {
+                        Image(systemName: photoImportCoordinator.isWorking ? "arrow.up.circle.fill" : "tray.full")
+                        Text(photoImportCoordinator.isWorking ? "アップロード中" : "アップロード")
+                        if !photoImportCoordinator.pendingBatches.isEmpty {
+                            Text("\(photoImportCoordinator.pendingBatches.count)")
+                                .font(.caption2.weight(.bold))
+                                .foregroundColor(.white)
+                                .frame(minWidth: 18, minHeight: 18)
+                                .background(Circle().fill(photoImportStatusColor))
+                        }
+                    }
+                    .font(.subheadline.weight(.semibold))
+                    .padding(.horizontal, 13)
+                    .frame(height: 40)
+                    .background(.ultraThinMaterial, in: Capsule())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("写真アップロードキュー")
+                .accessibilityValue(photoQueueAccessibilityValue)
+            }
+
+            Spacer()
+
+            Button {
+                settingsDidSave = false
+                showSettings = true
+            } label: {
+                Image(systemName: "gearshape.fill")
+                    .font(.system(size: 17, weight: .semibold))
+                    .frame(width: 40, height: 40)
+                    .background(.ultraThinMaterial, in: Circle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("設定")
+        }
+        .foregroundColor(.accentColor)
+    }
+
+    private var bottomTabBar: some View {
+        HStack(spacing: 4) {
+            ForEach(AppTab.allCases, id: \.self) { tab in
+                let isSelected = selectedTab == tab
+                Button {
+                    select(tab)
+                } label: {
+                    VStack(spacing: 3) {
+                        ZStack(alignment: .topTrailing) {
+                            Image(systemName: isSelected ? tab.selectedSymbolName : tab.symbolName)
+                                .font(.system(size: 18, weight: .semibold))
+                                .frame(height: 22)
+
+                            if tab == .photos && !photoImportCoordinator.pendingBatches.isEmpty {
+                                Circle()
+                                    .fill(photoImportStatusColor)
+                                    .frame(width: 7, height: 7)
+                                    .offset(x: 4, y: -1)
+                            }
+                        }
+
+                        Text(tab.title)
+                            .font(.caption2.weight(isSelected ? .semibold : .regular))
+                            .lineLimit(1)
+                    }
+                    .foregroundColor(isSelected ? .accentColor : .secondary)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 50)
+                    .background(
+                        Capsule()
+                            .fill(isSelected ? Color.accentColor.opacity(0.14) : Color.clear)
+                    )
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(tab.title)
+                .accessibilityValue(isSelected ? "選択中" : "")
+                .accessibilityHint(isSelected ? "もう一度押すと最初のページに戻ります" : "")
+            }
+        }
+        .padding(4)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .stroke(Color.primary.opacity(0.08), lineWidth: 0.5)
+        )
+        .shadow(color: .black.opacity(0.12), radius: 12, y: 5)
+    }
+
+    private var photoImportStatus: some View {
+        Button {
+            presentPhotoQueue()
+        } label: {
+            VStack(spacing: 8) {
+                HStack(spacing: 10) {
+                    Image(systemName: photoImportCoordinator.isWorking ? "arrow.up.circle.fill" : "exclamationmark.circle.fill")
+                        .foregroundColor(photoImportStatusColor)
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(photoImportCoordinator.isWorking ? "写真をアップロード中" : "写真アップロードを確認")
+                            .font(.subheadline.weight(.semibold))
+                        Text(photoImportStatusDetail)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .lineLimit(1)
+                    }
+
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.caption.weight(.bold))
+                        .foregroundColor(.secondary)
+                }
+
+                if photoImportCoordinator.isWorking {
+                    ProgressView(value: photoImportCoordinator.progress)
+                        .tint(.accentColor)
+                }
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 11)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .stroke(photoImportStatusColor.opacity(0.25), lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("写真アップロードの状態")
+        .accessibilityValue(photoImportStatusDetail)
+        .accessibilityHint("写真アップロードキューを開きます")
+    }
+
+    private var shouldShowPhotoImportStatus: Bool {
+        photoImportCoordinator.isWorking || !photoImportCoordinator.pendingBatches.isEmpty
+    }
+
+    private var photoImportStatusDetail: String {
+        if !photoImportCoordinator.statusMessage.isEmpty {
+            return photoImportCoordinator.statusMessage
+        }
+        return "未完了 \(photoImportCoordinator.pendingBatches.count)件"
+    }
+
+    private var photoQueueAccessibilityValue: String {
+        if photoImportCoordinator.pendingBatches.isEmpty {
+            return "未完了の項目はありません"
+        }
+        return "未完了 \(photoImportCoordinator.pendingBatches.count)件"
+    }
+
+    private var photoImportStatusColor: Color {
+        let needsAttention = photoImportCoordinator.batch?.failedCount ?? 0 > 0
+            || photoImportCoordinator.pendingBatches.contains {
+                $0.failedCount > 0 || $0.state == .commitUncertain
+            }
+        return needsAttention ? .orange : .accentColor
+    }
+
+    private func select(_ tab: AppTab) {
+        if selectedTab == tab {
+            reset(tab)
+        } else {
+            selectedTab = tab
+        }
+    }
+
+    private func reset(_ tab: AppTab) {
+        switch tab {
+        case .todo:
+            todoWebViewModel.resetToInitialPage()
+        case .home:
+            mainWebViewModel.resetToInitialPage()
+        case .today:
+            openTodayPage()
+        case .photos:
+            photoWebViewModel.resetToInitialPage()
+        }
+    }
+
+    private func openTodayPage() {
+        currentDate = getCurrentDate()
+        if let url = URL(string: "https://scrapbox.io/\(projectName)/\(currentDate)") {
+            dateWebViewModel.loadURL(url)
+        }
+    }
+
+    private func openCurrentYearPage() {
+        let year = Calendar.current.component(.year, from: Date())
+        if let url = URL(string: "https://scrapbox.io/\(projectName)/\(year)年") {
+            dateWebViewModel.loadURL(url)
+        }
+    }
+
+    private func presentPhotoQueue() {
+        photoImportCoordinator.refreshQueue()
+        showPhotoQueue = true
     }
 
     private func applyProjectName() {

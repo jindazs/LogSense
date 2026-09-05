@@ -22,12 +22,22 @@ final class CTDUITests: XCTestCase {
         // Put teardown code here. This method is called after the invocation of each test method in the class.
     }
 
-    func testExample() throws {
-        // UI tests must launch the application that they test.
+    func testPrimaryNavigationIsDiscoverable() throws {
+        XCUIDevice.shared.orientation = .portrait
         let app = XCUIApplication()
         app.launch()
 
-        // Use XCTAssert and related functions to verify your tests produce the correct results.
+        XCTAssertTrue(app.buttons["Home"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["Today"].exists)
+        XCTAssertTrue(app.buttons["ToDo"].exists)
+        XCTAssertTrue(app.buttons["Photos"].exists)
+        XCTAssertTrue(app.buttons["設定"].exists)
+
+        app.buttons["Today"].tap()
+        XCTAssertTrue(app.buttons["日付ページを選択"].waitForExistence(timeout: 3))
+
+        app.buttons["Photos"].tap()
+        XCTAssertTrue(app.buttons["写真アップロードキュー"].waitForExistence(timeout: 3))
     }
 
     func testLaunchPerformance() throws {
