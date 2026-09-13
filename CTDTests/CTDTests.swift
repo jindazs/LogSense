@@ -12,28 +12,12 @@ import UIKit
 @testable import CTD
 
 final class CTDTests: XCTestCase {
-    func testFloatingIPadKeyboardIgnoresKeyboardSafeArea() {
-        XCTAssertTrue(KeyboardSafeAreaPolicy.shouldIgnoreKeyboardSafeArea(
-            keyboardFrame: CGRect(x: 620, y: 280, width: 360, height: 360),
-            screenBounds: CGRect(x: 0, y: 0, width: 1024, height: 768),
-            idiom: .pad
-        ))
+    func testIPadAlwaysIgnoresKeyboardSafeArea() {
+        XCTAssertTrue(KeyboardSafeAreaPolicy.shouldIgnoreKeyboardSafeArea(idiom: .pad))
     }
 
-    func testDockedIPadKeyboardKeepsKeyboardSafeArea() {
-        XCTAssertFalse(KeyboardSafeAreaPolicy.shouldIgnoreKeyboardSafeArea(
-            keyboardFrame: CGRect(x: 0, y: 468, width: 1024, height: 300),
-            screenBounds: CGRect(x: 0, y: 0, width: 1024, height: 768),
-            idiom: .pad
-        ))
-    }
-
-    func testFloatingIPhoneKeyboardKeepsKeyboardSafeArea() {
-        XCTAssertFalse(KeyboardSafeAreaPolicy.shouldIgnoreKeyboardSafeArea(
-            keyboardFrame: CGRect(x: 40, y: 300, width: 320, height: 300),
-            screenBounds: CGRect(x: 0, y: 0, width: 390, height: 844),
-            idiom: .phone
-        ))
+    func testIPhoneKeepsKeyboardSafeArea() {
+        XCTAssertFalse(KeyboardSafeAreaPolicy.shouldIgnoreKeyboardSafeArea(idiom: .phone))
     }
 
     func testTodayPageRequestAddsDateHeadingOnlyToCreationURL() throws {

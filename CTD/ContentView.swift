@@ -344,10 +344,10 @@ struct ContentView: View {
             Divider()
             bottomTabBar
         }
-        // Ignore keyboard avoidance only while the iPad keyboard is undocked.
-        // Otherwise SwiftUI can treat its top edge as a bottom safe-area inset and
-        // compress the entire interface into the area above the floating keyboard.
-        .modifier(IPadFloatingKeyboardLayout())
+        // WKWebView scrolls its focused editor into view itself. On iPad, applying
+        // SwiftUI's additional keyboard safe area can instead compress the entire
+        // interface when the system keyboard is floating.
+        .modifier(IPadKeyboardLayout())
         .onAppear {
             projectName = groupDefaults.string(forKey: UserDefaultsKeys.projectName) ?? ""
             photoProjectName = groupDefaults.string(forKey: UserDefaultsKeys.photoProjectName)
@@ -785,50 +785,20 @@ struct ContentView: View {
 }
 
 enum KeyboardSafeAreaPolicy {
-    static func shouldIgnoreKeyboardSafeArea(
-        keyboardFrame: CGRect,
-        screenBounds: CGRect,
-        idiom: UIUserInterfaceIdiom
-    ) -> Bool {
-        guard idiom == .pad,
-              !keyboardFrame.isEmpty,
-              keyboardFrame.intersects(screenBounds) else {
-            return false
-        }
-
-        let tolerance: CGFloat = 1
-        let reachesBottom = keyboardFrame.maxY >= screenBounds.maxY - tolerance
-        let spansWidth = keyboardFrame.minX <= screenBounds.minX + tolerance
-            && keyboardFrame.maxX >= screenBounds.maxX - tolerance
-        return !(reachesBottom && spansWidth)
+    static func shouldIgnoreKeyboardSafeArea(idiom: UIUserInterfaceIdiom) -> Bool {
+        idiom == .pad
     }
 }
 
-private struct IPadFloatingKeyboardLayout: ViewModifier {
-    @State private var ignoresKeyboardSafeArea = false
-
+private struct IPadKeyboardLayout: ViewModifier {
     func body(content: Content) -> some View {
         content
-            .ignoresSafeArea(ignoresKeyboardSafeArea ? .keyboard : [], edges: .bottom)
-            .onReceive(NotificationCenter.default.publisher(
-                for: UIResponder.keyboardWillChangeFrameNotification
-            )) { notification in
-                guard let value = notification.userInfo?[UIResponder.keyboardFrameEndUserInfoKey]
-                    as? NSValue else {
-                    ignoresKeyboardSafeArea = false
-                    return
-                }
-                ignoresKeyboardSafeArea = KeyboardSafeAreaPolicy.shouldIgnoreKeyboardSafeArea(
-                    keyboardFrame: value.cgRectValue,
-                    screenBounds: UIScreen.main.bounds,
+            .ignoresSafeArea(
+                KeyboardSafeAreaPolicy.shouldIgnoreKeyboardSafeArea(
                     idiom: UIDevice.current.userInterfaceIdiom
-                )
-            }
-            .onReceive(NotificationCenter.default.publisher(
-                for: UIResponder.keyboardWillHideNotification
-            )) { _ in
-                ignoresKeyboardSafeArea = false
-            }
+                ) ? .keyboard : [],
+                edges: .bottom
+            )
     }
 }
 
