@@ -7,6 +7,21 @@ struct ScrapboxPageAppendRequest: Equatable {
     let expectedFragments: [String]
 }
 
+struct TodayPageRequest: Equatable {
+    let contextURL: URL
+    let pageURL: URL
+    let creationURL: URL
+    let verificationURL: URL
+}
+
+enum TodayPageContent {
+    static func heading(for date: Date, calendar: Calendar = .current) -> String {
+        let components = calendar.dateComponents([.month, .day], from: date)
+        guard let month = components.month, let day = components.day else { return "" }
+        return "#\(month)月\(day)日"
+    }
+}
+
 enum ScrapboxURLBuilder {
     private static let pathComponentAllowed = CharacterSet(
         charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~"
@@ -54,6 +69,28 @@ enum ScrapboxURLBuilder {
             pageURL: pageURL,
             verificationURL: verificationURL,
             expectedFragments: append.verificationFragments
+        )
+    }
+
+    static func makeTodayPageRequest(
+        project: String,
+        title: String,
+        date: Date,
+        calendar: Calendar = .current
+    ) -> TodayPageRequest? {
+        let heading = TodayPageContent.heading(for: date, calendar: calendar)
+        guard !heading.isEmpty,
+              let contextURL = makeProjectURL(project: project),
+              let pageURL = makePageURL(project: project, title: title),
+              let creationURL = makePageURL(project: project, title: title, body: heading),
+              let verificationURL = makePageTextAPIURL(project: project, title: title) else {
+            return nil
+        }
+        return TodayPageRequest(
+            contextURL: contextURL,
+            pageURL: pageURL,
+            creationURL: creationURL,
+            verificationURL: verificationURL
         )
     }
 

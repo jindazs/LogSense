@@ -13,6 +13,7 @@ https://scrapbox.io/jindazs/LogSense
     - ToDo: プロジェクト名/ToDo/
     - Home: プロジェクト名/
     - Today: プロジェクト名/YYYY-MM-DD
+      - ページがまだ存在しない場合は、`#M月d日` 形式の日付見出しを自動入力
     - Photos: 写真プロジェクト名/
 - **ナビゲーション操作**
   - 選択中のタブをもう一度タップすると各タブの初期ページに戻る

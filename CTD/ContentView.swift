@@ -83,6 +83,12 @@ enum PageAppendVerificationResult: Equatable {
     case unavailable
 }
 
+enum PageExistenceResult: Equatable {
+    case exists
+    case missing
+    case unavailable
+}
+
 enum PageAppendRetryAction: Equatable {
     case skip
     case append
@@ -177,6 +183,27 @@ final class WebViewModel: ObservableObject {
             webView.load(URLRequest(url: url))
         } else {
             pendingURL = url
+        }
+    }
+
+    func openTodayPage(_ request: TodayPageRequest) {
+        let webView = webViewForDisplay()
+        webView.prepareForPageVerification(
+            contextURL: request.contextURL,
+            targetURL: request.verificationURL
+        ) { [weak webView] prepared in
+            guard prepared, let webView else {
+                self.loadURL(request.pageURL)
+                return
+            }
+            webView.checkPageExistence(at: request.verificationURL) { result in
+                switch result {
+                case .exists, .unavailable:
+                    webView.load(URLRequest(url: request.pageURL))
+                case .missing:
+                    webView.load(URLRequest(url: request.creationURL))
+                }
+            }
         }
     }
 
@@ -590,6 +617,9 @@ struct ContentView: View {
             reset(tab)
         } else {
             selectedTab = tab
+            if tab == .today {
+                openTodayPage()
+            }
         }
     }
 
@@ -607,10 +637,14 @@ struct ContentView: View {
     }
 
     private func openTodayPage() {
-        currentDate = getCurrentDate()
-        if let url = URL(string: "https://scrapbox.io/\(projectName)/\(currentDate)") {
-            dateWebViewModel.loadURL(url)
-        }
+        let now = Date()
+        currentDate = getCurrentDate(from: now)
+        guard let request = ScrapboxURLBuilder.makeTodayPageRequest(
+            project: projectName,
+            title: currentDate,
+            date: now
+        ) else { return }
+        dateWebViewModel.openTodayPage(request)
     }
 
     private func openCurrentYearPage() {
@@ -645,10 +679,10 @@ struct ContentView: View {
         photoWebViewModel.updateInitialURL(photoURL)
     }
 
-    func getCurrentDate() -> String {
+    func getCurrentDate(from date: Date = Date()) -> String {
         let dateFormatter = DateFormatter()
         dateFormatter.dateFormat = "yyyy-MM-dd"
-        return dateFormatter.string(from: Date())
+        return dateFormatter.string(from: date)
     }
 
     private func handleIncomingURL(_ url: URL) {
@@ -876,6 +910,45 @@ class CustomWebView: WKWebView, WKNavigationDelegate {
                 case .failure(let error):
                     LogSenseLogger.debug(
                         "[LogSense] Cosense page verification failed: \(error.localizedDescription)"
+                    )
+                    completion(.unavailable)
+                }
+            }
+        )
+    }
+
+    func checkPageExistence(
+        at url: URL,
+        completion: @escaping (PageExistenceResult) -> Void
+    ) {
+        let script = """
+        try {
+            const response = await fetch(url, {
+                credentials: 'include',
+                cache: 'no-store'
+            });
+            if (response.status === 404) return 'missing';
+            return response.ok ? 'exists' : 'unavailable';
+        } catch (_) {
+            return 'unavailable';
+        }
+        """
+        callAsyncJavaScript(
+            script,
+            arguments: ["url": url.absoluteString],
+            in: nil,
+            in: .page,
+            completionHandler: { result in
+                switch result {
+                case .success(let value):
+                    switch value as? String {
+                    case "exists": completion(.exists)
+                    case "missing": completion(.missing)
+                    default: completion(.unavailable)
+                    }
+                case .failure(let error):
+                    LogSenseLogger.debug(
+                        "[LogSense] Cosense page existence check failed: \(error.localizedDescription)"
                     )
                     completion(.unavailable)
                 }

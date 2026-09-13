@@ -12,6 +12,35 @@ import UIKit
 @testable import CTD
 
 final class CTDTests: XCTestCase {
+    func testTodayPageRequestAddsDateHeadingOnlyToCreationURL() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        let date = try XCTUnwrap(calendar.date(from: DateComponents(
+            year: 2026,
+            month: 9,
+            day: 12
+        )))
+
+        let request = try XCTUnwrap(ScrapboxURLBuilder.makeTodayPageRequest(
+            project: "private-jindazs",
+            title: "2026-09-12",
+            date: date,
+            calendar: calendar
+        ))
+
+        XCTAssertEqual(request.contextURL.path, "/private-jindazs")
+        XCTAssertEqual(request.pageURL.path, "/private-jindazs/2026-09-12")
+        XCTAssertNil(URLComponents(url: request.pageURL, resolvingAgainstBaseURL: false)?.query)
+        XCTAssertEqual(
+            URLComponents(url: request.creationURL, resolvingAgainstBaseURL: false)?.queryItems,
+            [URLQueryItem(name: "body", value: "#9月12日")]
+        )
+        XCTAssertEqual(
+            request.verificationURL.path,
+            "/api/pages/private-jindazs/2026-09-12/text"
+        )
+    }
+
     func testPhotoImportWaitsForActiveSceneBeforeStartingSharedBatch() {
         XCTAssertEqual(
             PhotoImportScenePolicy.action(for: .inactive, hasPendingImport: true),
