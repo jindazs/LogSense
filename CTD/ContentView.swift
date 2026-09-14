@@ -121,6 +121,42 @@ enum PageVerificationContextPolicy {
     }
 }
 
+enum CosenseWebCachePreparation {
+    private static let resetKey = "CosenseWebCacheReset-v1"
+    private static var isPreparing = false
+    private static var pendingCompletions: [() -> Void] = []
+    static let dataTypes: Set<String> = [
+        WKWebsiteDataTypeDiskCache,
+        WKWebsiteDataTypeMemoryCache,
+        WKWebsiteDataTypeOfflineWebApplicationCache,
+        WKWebsiteDataTypeServiceWorkerRegistrations
+    ]
+
+    static func prepare(completion: @escaping () -> Void) {
+        guard !UserDefaults.standard.bool(forKey: resetKey) else {
+            completion()
+            return
+        }
+
+        pendingCompletions.append(completion)
+        guard !isPreparing else { return }
+        isPreparing = true
+
+        WKWebsiteDataStore.default().removeData(
+            ofTypes: dataTypes,
+            modifiedSince: .distantPast
+        ) {
+            DispatchQueue.main.async {
+                UserDefaults.standard.set(true, forKey: resetKey)
+                let completions = pendingCompletions
+                pendingCompletions.removeAll()
+                isPreparing = false
+                completions.forEach { $0() }
+            }
+        }
+    }
+}
+
 final class WebViewModel: ObservableObject {
     private var webView: CustomWebView?
     private var initialURL: URL
@@ -146,8 +182,12 @@ final class WebViewModel: ObservableObject {
         let webView = CustomWebView()
         let url = pendingURL ?? initialURL
         pendingURL = nil
-        webView.load(URLRequest(url: url))
         self.webView = webView
+        LogSenseLogger.debug("[LogSense] Loading initial web URL: \(url.absoluteString)")
+        CosenseWebCachePreparation.prepare { [weak webView] in
+            LogSenseLogger.debug("[LogSense] Web cache prepared")
+            webView?.load(URLRequest(url: url))
+        }
         return webView
     }
 
@@ -344,10 +384,6 @@ struct ContentView: View {
             Divider()
             bottomTabBar
         }
-        // WKWebView scrolls its focused editor into view itself. On iPad, applying
-        // SwiftUI's additional keyboard safe area can instead compress the entire
-        // interface when the system keyboard is floating.
-        .modifier(IPadKeyboardLayout())
         .onAppear {
             projectName = groupDefaults.string(forKey: UserDefaultsKeys.projectName) ?? ""
             photoProjectName = groupDefaults.string(forKey: UserDefaultsKeys.photoProjectName)
@@ -784,21 +820,9 @@ struct ContentView: View {
     }
 }
 
-enum KeyboardSafeAreaPolicy {
-    static func shouldIgnoreKeyboardSafeArea(idiom: UIUserInterfaceIdiom) -> Bool {
-        idiom == .pad
-    }
-}
-
-private struct IPadKeyboardLayout: ViewModifier {
-    func body(content: Content) -> some View {
-        content
-            .ignoresSafeArea(
-                KeyboardSafeAreaPolicy.shouldIgnoreKeyboardSafeArea(
-                    idiom: UIDevice.current.userInterfaceIdiom
-                ) ? .keyboard : [],
-                edges: .bottom
-            )
+enum KeyboardAccessoryPolicy {
+    static func usesCustomAccessory(idiom: UIUserInterfaceIdiom) -> Bool {
+        idiom != .pad
     }
 }
 
@@ -984,7 +1008,12 @@ class CustomWebView: WKWebView, WKNavigationDelegate {
     private lazy var cachedInputAccessoryView: UIView = makeInputAccessoryView()
 
     override var inputAccessoryView: UIView? {
-        cachedInputAccessoryView
+        guard KeyboardAccessoryPolicy.usesCustomAccessory(
+            idiom: UIDevice.current.userInterfaceIdiom
+        ) else {
+            return nil
+        }
+        return cachedInputAccessoryView
     }
 
     private func makeInputAccessoryView() -> UIView {
@@ -1087,6 +1116,9 @@ class CustomWebView: WKWebView, WKNavigationDelegate {
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        LogSenseLogger.debug(
+            "[LogSense] Web navigation finished: \(webView.url?.absoluteString ?? "nil")"
+        )
         finishTrackedLoad(navigation, success: true)
     }
 
@@ -1095,6 +1127,7 @@ class CustomWebView: WKWebView, WKNavigationDelegate {
         didFail navigation: WKNavigation!,
         withError error: Error
     ) {
+        LogSenseLogger.debug("[LogSense] Web navigation failed: \(error.localizedDescription)")
         finishTrackedLoad(navigation, success: false)
     }
 
@@ -1103,6 +1136,7 @@ class CustomWebView: WKWebView, WKNavigationDelegate {
         didFailProvisionalNavigation navigation: WKNavigation!,
         withError error: Error
     ) {
+        LogSenseLogger.debug("[LogSense] Web provisional navigation failed: \(error.localizedDescription)")
         finishTrackedLoad(navigation, success: false)
     }
 

@@ -9,15 +9,25 @@ import XCTest
 import ImageIO
 import UniformTypeIdentifiers
 import UIKit
+import WebKit
 @testable import CTD
 
 final class CTDTests: XCTestCase {
-    func testIPadAlwaysIgnoresKeyboardSafeArea() {
-        XCTAssertTrue(KeyboardSafeAreaPolicy.shouldIgnoreKeyboardSafeArea(idiom: .pad))
+    func testCosenseCacheResetPreservesAuthenticationAndLocalData() {
+        XCTAssertTrue(CosenseWebCachePreparation.dataTypes.contains(WKWebsiteDataTypeDiskCache))
+        XCTAssertTrue(CosenseWebCachePreparation.dataTypes.contains(
+            WKWebsiteDataTypeServiceWorkerRegistrations
+        ))
+        XCTAssertFalse(CosenseWebCachePreparation.dataTypes.contains(WKWebsiteDataTypeCookies))
+        XCTAssertFalse(CosenseWebCachePreparation.dataTypes.contains(WKWebsiteDataTypeLocalStorage))
     }
 
-    func testIPhoneKeepsKeyboardSafeArea() {
-        XCTAssertFalse(KeyboardSafeAreaPolicy.shouldIgnoreKeyboardSafeArea(idiom: .phone))
+    func testIPadDoesNotUseDockedCustomKeyboardAccessory() {
+        XCTAssertFalse(KeyboardAccessoryPolicy.usesCustomAccessory(idiom: .pad))
+    }
+
+    func testIPhoneKeepsCustomKeyboardAccessory() {
+        XCTAssertTrue(KeyboardAccessoryPolicy.usesCustomAccessory(idiom: .phone))
     }
 
     func testTodayPageRequestAddsDateHeadingOnlyToCreationURL() throws {
@@ -261,10 +271,15 @@ final class CTDTests: XCTestCase {
     }
 
     @MainActor
-    func testInputAccessoryViewIsReused() {
+    func testInputAccessoryViewFollowsDevicePolicy() {
         let webView = CustomWebView()
 
-        XCTAssertTrue(webView.inputAccessoryView === webView.inputAccessoryView)
+        if KeyboardAccessoryPolicy.usesCustomAccessory(idiom: UIDevice.current.userInterfaceIdiom) {
+            XCTAssertNotNil(webView.inputAccessoryView)
+            XCTAssertTrue(webView.inputAccessoryView === webView.inputAccessoryView)
+        } else {
+            XCTAssertNil(webView.inputAccessoryView)
+        }
     }
 
     func testPhotoImportBodyBuilderGroupsByDateAndPreservesSelectionOrder() {
