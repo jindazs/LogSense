@@ -453,6 +453,46 @@ final class CTDTests: XCTestCase {
         XCTAssertNil(store.record(for: "../invalid"))
     }
 
+    func testPhotoUploadHistoryStoreMergeKeepsNewestRecord() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("LogSenseHistoryTests-\(UUID().uuidString)", isDirectory: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let store = PhotoUploadHistoryStore(rootURL: root)
+        let hash = String(repeating: "d", count: 64)
+        let newer = UploadedPhotoRecord(
+            contentHash: hash,
+            byteSize: 200,
+            originalFilename: "new.jpg",
+            gyazoURL: "https://gyazo.com/new",
+            capturedDate: "2026-09-15",
+            uploadedAt: Date(timeIntervalSince1970: 200)
+        )
+        let older = UploadedPhotoRecord(
+            contentHash: hash,
+            byteSize: 100,
+            originalFilename: "old.jpg",
+            gyazoURL: "https://gyazo.com/old",
+            capturedDate: "2026-09-14",
+            uploadedAt: Date(timeIntervalSince1970: 100)
+        )
+
+        try store.save(newer)
+        try store.merge([older])
+
+        XCTAssertEqual(store.record(for: hash), newer)
+
+        let newest = UploadedPhotoRecord(
+            contentHash: hash,
+            byteSize: 300,
+            originalFilename: "newest.jpg",
+            gyazoURL: "https://gyazo.com/newest",
+            capturedDate: "2026-09-15",
+            uploadedAt: Date(timeIntervalSince1970: 300)
+        )
+        try store.merge([newest])
+        XCTAssertEqual(store.record(for: hash), newest)
+    }
+
     func testPhotoUploadHistoryStoreFindsCurrentGyazoImageID() throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("LogSenseHistoryTests-\(UUID().uuidString)", isDirectory: true)

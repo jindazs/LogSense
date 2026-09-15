@@ -394,6 +394,9 @@ struct ContentView: View {
             let photoURL = URL(string: "https://scrapbox.io/\(photoProjectName)")!
             photoWebViewModel.updateInitialURL(photoURL)
             photoImportCoordinator.refreshQueue()
+            Task {
+                await PhotoUploadHistoryCloudSync.shared.synchronize()
+            }
             discoverAndStartPendingPhotoImport()
         }
         .sheet(isPresented: $showSettings, onDismiss: {
@@ -415,6 +418,9 @@ struct ContentView: View {
         }
         .onChange(of: scenePhase) { phase in
             if phase == .active {
+                Task {
+                    await PhotoUploadHistoryCloudSync.shared.synchronize()
+                }
                 discoverAndStartPendingPhotoImport()
             }
             switch PhotoImportScenePolicy.action(

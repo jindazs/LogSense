@@ -261,6 +261,17 @@ final class PhotoImportCoordinator: ObservableObject {
     }
 
     private func uploadPendingItems() {
+        guard batch != nil, store != nil else { return }
+        isWorking = true
+        statusMessage = "iCloudの写真記録を同期しています…"
+        uploadTask = Task { [weak self] in
+            await PhotoUploadHistoryCloudSync.shared.synchronize()
+            guard let self, !Task.isCancelled else { return }
+            self.beginUploadingPendingItems()
+        }
+    }
+
+    private func beginUploadingPendingItems() {
         guard var batch, let store else { return }
         let historyStore = try? PhotoUploadHistoryStore.shared()
         var knownHashes = Set<String>(
@@ -356,7 +367,7 @@ final class PhotoImportCoordinator: ObservableObject {
                                let byteSize = current.items[index].byteSize {
                                 do {
                                     let historyStore = try PhotoUploadHistoryStore.shared()
-                                    try historyStore.save(UploadedPhotoRecord(
+                                    let uploadedRecord = UploadedPhotoRecord(
                                         contentHash: contentHash,
                                         byteSize: byteSize,
                                         originalFilename: current.items[index].originalFilename,
@@ -364,7 +375,11 @@ final class PhotoImportCoordinator: ObservableObject {
                                         gyazoImageID: receipt.imageID,
                                         capturedDate: current.items[index].capturedDate,
                                         uploadedAt: Date()
-                                    ))
+                                    )
+                                    try historyStore.save(uploadedRecord)
+                                    Task {
+                                        await PhotoUploadHistoryCloudSync.shared.upload(uploadedRecord)
+                                    }
                                 } catch {
                                     LogSenseLogger.debug(
                                         "[LogSense] upload history save failed: \(error.localizedDescription)"

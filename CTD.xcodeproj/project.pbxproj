@@ -20,6 +20,7 @@
 		A50000000000000000000002 /* PhotoImportBatch.swift in Sources */ = {isa = PBXBuildFile; fileRef = A50000000000000000000001 /* PhotoImportBatch.swift */; };
 		A50000000000000000000003 /* PhotoImportBatch.swift in Sources */ = {isa = PBXBuildFile; fileRef = A50000000000000000000001 /* PhotoImportBatch.swift */; };
 		A60000000000000000000002 /* PhotoImportCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = A60000000000000000000001 /* PhotoImportCoordinator.swift */; };
+		A70000000000000000000002 /* PhotoUploadHistoryCloudSync.swift in Sources */ = {isa = PBXBuildFile; fileRef = A70000000000000000000001 /* PhotoUploadHistoryCloudSync.swift */; };
 		B60B509C2C7A91CF003A6E4B /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = B60B509B2C7A91CF003A6E4B /* Assets.xcassets */; };
 		B60B509F2C7A91CF003A6E4B /* Preview Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = B60B509E2C7A91CF003A6E4B /* Preview Assets.xcassets */; };
 		B60B50A92C7A91CF003A6E4B /* CTDTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B60B50A82C7A91CF003A6E4B /* CTDTests.swift */; };
@@ -88,6 +89,7 @@
 		A40000000000000000000001 /* ImageMetadataReader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageMetadataReader.swift; sourceTree = "<group>"; };
 		A50000000000000000000001 /* PhotoImportBatch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoImportBatch.swift; sourceTree = "<group>"; };
 		A60000000000000000000001 /* PhotoImportCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoImportCoordinator.swift; sourceTree = "<group>"; };
+		A70000000000000000000001 /* PhotoUploadHistoryCloudSync.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoUploadHistoryCloudSync.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -181,6 +183,7 @@
 				B60B50972C7A91CD003A6E4B /* CTDApp.swift */,
 				B60B50992C7A91CD003A6E4B /* ContentView.swift */,
 				A60000000000000000000001 /* PhotoImportCoordinator.swift */,
+				A70000000000000000000001 /* PhotoUploadHistoryCloudSync.swift */,
 				B60B509B2C7A91CF003A6E4B /* Assets.xcassets */,
 				B60B509D2C7A91CF003A6E4B /* Preview Content */,
 			);
@@ -308,6 +311,9 @@
 							com.apple.ApplicationGroups.iOS = {
 								enabled = 1;
 							};
+							com.apple.iCloud = {
+								enabled = 1;
+							};
 							com.apple.Keychain = {
 								enabled = 1;
 							};
@@ -401,6 +407,7 @@
 				A30000000000000000000002 /* LogSenseLogger.swift in Sources */,
 				A50000000000000000000002 /* PhotoImportBatch.swift in Sources */,
 				A60000000000000000000002 /* PhotoImportCoordinator.swift in Sources */,
+				A70000000000000000000002 /* PhotoUploadHistoryCloudSync.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

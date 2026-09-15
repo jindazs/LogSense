@@ -140,18 +140,18 @@ struct PhotoUploadHistoryStore {
 
     func record(forGyazoImageID imageID: String, fileManager: FileManager = .default) -> UploadedPhotoRecord? {
         let normalizedImageID = imageID.lowercased()
-        return records(fileManager: fileManager).first { record in
+        return allRecords(fileManager: fileManager).first { record in
             gyazoImageID(for: record)?.lowercased() == normalizedImageID
         }
     }
 
     func gyazoImageIDs(fileManager: FileManager = .default) -> Set<String> {
-        Set(records(fileManager: fileManager).compactMap { record in
+        Set(allRecords(fileManager: fileManager).compactMap { record in
             gyazoImageID(for: record)?.lowercased()
         })
     }
 
-    private func records(fileManager: FileManager) -> [UploadedPhotoRecord] {
+    func allRecords(fileManager: FileManager = .default) -> [UploadedPhotoRecord] {
         guard let urls = try? fileManager.contentsOfDirectory(
             at: rootURL,
             includingPropertiesForKeys: nil,
@@ -167,6 +167,20 @@ struct PhotoUploadHistoryStore {
             let decoder = JSONDecoder()
             decoder.dateDecodingStrategy = .iso8601
             return try? decoder.decode(UploadedPhotoRecord.self, from: data)
+        }
+    }
+
+    /// Imports records received from iCloud without replacing a newer local upload.
+    func merge(
+        _ incomingRecords: [UploadedPhotoRecord],
+        fileManager: FileManager = .default
+    ) throws {
+        for incoming in incomingRecords {
+            if let local = record(for: incoming.contentHash),
+               local.uploadedAt >= incoming.uploadedAt {
+                continue
+            }
+            try save(incoming, fileManager: fileManager)
         }
     }
 
